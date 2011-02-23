@@ -1,0 +1,336 @@
+.TH TRACEDSP 1 2011/01/27
+.SH NAME
+Trace DSP, a time series processor for SAC and Mini-SEED data
+
+.SH SYNOPSIS
+.nf
+tracedsp [options] file1 [file2 file3 ...]
+
+.fi
+.SH DESCRIPTION
+\fBtracedsp\fP is a digital signal processor for time series data in
+SAC and Mini-SEED format.  For each continuous time series in the
+input data the specified operations will be performed in order.
+
+If '-' is specified standard input will be read.  Multiple input files
+will be processed in the order specified.  If an input file name is
+prefixed with an '@' character the file is assumed to contain a list
+of input data files, see \fILIST FILES\fP below.
+
+When a input file is full SEED including both SEED headers and data
+records all of the headers will be skipped and completely unprocessed.
+
+.SH OPTIONS
+
+.IP "-V         "
+Print program version and exit.
+
+.IP "-h         "
+Print program usage and exit.
+
+.IP "-v         "
+Be more verbose.  This flag can be used multiple times ("-v -v" or
+"-vv") for more verbosity.
+
+.IP "-s         "
+Print a basic summary including the number of records and the number
+of samples they included after processing all input records.
+
+.IP "-tt \fIsecs\fP"
+Specify a time tolerance for constructing continous trace
+segments. The tolerance is specified in seconds.  The default
+tolerance is 1/2 of the sample period.
+
+.IP "-rt \fIdiff\fP"
+Specify a sample rate tolerance for constructing continous trace
+segments. The tolerance is specified as the difference between two
+sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
+0.0001).
+
+.IP "-ts \fItime\fP"
+Limit processing to Mini-SEED records that start after \fItime\fP.
+The format of the \fItime\fP arguement
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
+
+.IP "-te \fItime\fP"
+Limit processing to Mini-SEED records that end before \fItime\fP.
+The format of the \fItime\fP arguement
+is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
+commas (,), colons (:) or periods (.).
+
+.IP "-MSEED"
+Write output as Mini-SEED instead of SAC.
+
+.IP "-Mr \fIbytes\fP"
+Specify the input record length in \fIbytes\fP.  By default the
+length of the first Mini-SEED record is automatically detected, this
+option forces the record length.  The option is required when the
+input records do not contain a 1000 Blockette.
+
+.IP "-Me \fIencoding\fP"
+Specify the data encoding format.  These encoding values are the same
+as those specified in the SEED 1000 Blockette.
+
+.IP "-MR \fIbytes\fP"
+Specify the record length in \fIbytes\fP for output Mini-SEED data.
+The default record length will be 4096 bytes.
+
+.IP "-ME \fIencoding\fP"
+Specify the \fIencoding\fP format output Mini-SEED data.  This can be one of:
+.nf
+3  : 32-bit integers
+4  : 32-bit floating point numbers
+5  : 64-bit floating point numbers
+10 : Steim-1 integer compression
+11 : Stime-2 integer compression
+.fi 
+
+.IP "-Sf \fIformat\fP"
+Specify the SAC output type, the default is SAC binary in host
+computer byte order.  This can be one of:
+.nf
+1 : SAC alphanumeric format
+2 : SAC binary format in host computer byte order (default)
+3 : SAC binary in little-endian byte order
+4 : SAC binary in big-endian byte order
+.fi
+
+.IP "-m \fImetafile\fP"
+Specify a file containing metadata such as scaling factor,
+coordinates, elevation, component orientation, etc.  For each
+time-series written any matching metadata will be added to the SAC
+header.  see \fIMETADATA FILES\fP below.
+
+.IP "-msi       "
+Convert any component inclination values in a metadata file from SEED
+(dip) to SAC convention, this is a simple matter of adding 90 degrees.
+
+.IP "-c \fIchannel\fP"
+Specify a \fIchannel/component\fP for processed output data, this
+effectively overrides the channel component in the input data.
+
+.IP "-o \fIoutfile\fP"
+Specify the output file name.  This is optional and if not specified
+file names will be generated based on source parameters and data start
+time.  SAC files cannot contain more than a single segment of data, if
+this option is used and more than a single SAC segment is written as
+output the file will be overwritten.
+
+.IP "-od \fIdirectory\fP"
+If no output file is explicitly specified the program will generate
+output file name(s).  This option controls which directories these
+file(s) will be written to.
+
+.IP "-CR \fIrespfile[:start:stop]\fP"
+Convolve the time-series with the response specified in the SEED RESP
+file.  Optionally the starting and ending stages can be limited by
+specifying them as \fIstart\fP and \fIstop\fP.
+
+.IP "-DR \fIrespfile[:start:stop]\fP"
+Deconvolve the response specified in the SEED RESP file from the
+time-series.  Optionally the starting and ending stages can be limited
+by specifying them as \fIstart\fP and \fIstop\fP.
+
+.IP "-CS \fIpzfile\fP"
+Convolve the time-series with the response specified in the SAC poles
+and zeros file.
+
+.IP "-DS \fIpzfile\fP"
+Deconvolve the response specified in the SAC poles and zeros file from
+the time-series.
+
+.IP "\fBSPECIAL CASE\fP"
+When a deconvolution operation is directly followed by a convolution
+operation they will be combined into a composite transfer operation
+for stability and efficiency.
+
+.IP "-T \fIf1/f2/f3/f4\fP"
+Specify a envelope for a spectrum taper for (de)convolution
+operations, frequencies are specified in Hertz.  This cosine taper
+scales the spectrum from 0 to 1 between f1 and f2 and from 1 to 0
+between f3 and f4.
+
+.IP "-Ta"
+Automatically determine envelope for a spectrum taper for
+deconvolution.  A pass band is determined for all frequencies with
+amplitude responses greater than 1% of the maximum amplitude.  This
+algorithm is designed to work with flat responses, i.e. a reponse in
+velocity for an instrument which is flat to velocity.
+
+.IP "-W"
+Prewhiten the time-series data before and dewhiten after any
+(de)convolution operations.  Whitening is performed in the time
+domain.
+
+.IP "-Wo \fIorder\fP"
+Specify the prediction filter \fIorder\fP used for whitening, default
+order is 6.
+
+.IP "-Rts"
+Use the total channel sensitivity when (de)convolving with responses
+specified in SEED RESP format.  By default evalresp calculates the
+total gain as the product of stage gains.  This option allows using a
+subset of the stages combined with the full scale sensitivity,
+primarily useful to calculate a response using just the poles and
+zeros stage with the full sensitivity (as would be done with a SAC
+poles and zeros file).  This is equivalent to the -ts evalresp option.
+
+.IP "-Red"
+Use the estimated delay in SEED RESP files instead of the correction
+applied value when (de)convolving asymmetric FIR filters.  This is
+equivalent to the -use-estimated-delay evalresp option.
+	
+.IP "-Rin"
+Ignore the SEED naming parameters when (de)convolving with responses
+specified in SEED RESP format, i.e. use the first response found in
+the specified RESP file.  By default the network, station, location
+and channel of the time-series are matched with an appropriate
+response in the specified RESP file.
+
+.IP "-Ru \fIunits\fP"
+Specify the output units for the response calculated with evalresp for
+SEED RESP (de)convolution operations.
+
+.IP "-LP \fIfrequency[/order]\fP"
+Low-pass filter the time-series using an IIR filter derived from a low
+pass cutoff in Hertz and a filter order.  The filter \fPorder\fP can
+optionally be specified and defaults to 4.  The filter is applied in
+the forward and reverse directions to eliminate phase distortion.  The
+argument \fB-LP1\fP can be used to request a single pass filter, phase
+distortion might be present.
+
+.IP "-HP \fIfrequency[/order]\fP"
+High-pass filter the time-series using an IIR filter derived from a
+high pass cutoff in Hertz and a filter order.  The filter \fPorder\fP
+can optionally be specified and defaults to 4.  The filter is applied
+in the forward and reverse directions to eliminate phase distortion.
+The argument \fB-HP1\fP can be used to request a single pass filter,
+phase distortion might be present.
+
+.IP "-BP \fIfrequency[/order]:frequency[/order]\fP"
+Band-pass filter the time-series using an IIR filter derived from low
+and high pass cutoff frequencies in Hertz and filter orders.  The
+filter orders can optionally be specified and default to 4.  The
+filter is applied in the forward and reverse directions to eliminate
+phase distortion.  The argument \fB-BP1\fP can be used to request a
+single pass filter, phase distortion might be present.
+
+.IP "-D2"
+Perform a 2-point, uncentered differentiation on the time-series.
+This results in one less sample and a time-shift of 1/2 sample period.
+
+.IP "-IT"
+Perform integration the time-series using the trapezoidal (midpoint)
+method.  This results in one less sample and a time-shift of 1/2
+sample period.
+
+.IP "-RM"
+Remove the mean from the time-series.
+
+.IP "-SC \fIfactor\fP"
+Scale the time-series by \fIfactor\fP, i.e. multiple each data sample
+by \fIfactor\fP.
+
+.IP "-SI \fIfactor\fP"
+Scale the time-series by the inverse of \fIfactor\fP, i.e. divide each
+data sample by \fIfactor\fP.
+
+.IP "-DEC \fIfactor\fP"
+Decimate the time-series by \fIfactor\fP and apply an anti-alias FIR
+filter.  The decimation \fIfactor\fP must be between 2 and 7.  The
+hardcoded linear-phase anti-alias filters are the same default filters
+used by SAC and should not disrupt the phase characteristics of the
+signal.
+
+.IP "-TAP \fIwidth[:type]\fP"
+Apply symmetric taper of to the time-series.  The taper window
+\fIwidth\fP is specified as a percent of the trace length from 0 to
+0.5.  An optional window type may be specified, supported types are:
+
+.nf
+HANNING (default)
+HAMMING
+COSINE
+.fi
+
+.SH METADATA FILES
+A metadata file contains a list of station parameters, some of which
+can be stored in SAC but not in Mini-SEED.  Each line in a metadata
+file should be a comma-separated list of parameters in the following
+order:
+
+.nf
+Network (KNETWK)
+Station (KSTNM)
+Location (KHOLE)
+Channel (KCMPNM)
+Latitude (STLA)
+Longitude (STLO)
+Elevation (STEL), in meters [not currently used by SAC]
+Depth (STDP), in meters [not currently used by SAC]
+Component Azimuth (CMPAZ), degrees clockwise from north
+Component Incident Angle (CMPINC), degrees from vertical
+Instrument Name (KINST), up to 8 characters
+Scale Factor (SCALE)
+Scale Frequency, unused
+Scale Units, unused
+Sampling rate, unused
+Start time, used for matching
+End time, used for matching
+
+
+For example:
+------------------
+#net,sta,loc,chan,lat,lon,elev,depth,azimuth,SACdip,instrument,scale,scalefreq,scaleunits,samplerate,start,end
+IU,ANMO,00,BH1,34.945981,-106.457133,1671,145,328,90,Geotech KS-54000,3456610000,0.02,M/S,20,2008-06-30T20:00:00,2599-12-31T23:59:59
+IU,ANMO,00,BH2,34.945981,-106.457133,1671,145,58,90,Geotech KS-54000,3344370000,0.02,M/S,20,2008-06-30T20:00:00,2599-12-31T23:59:59
+IU,ANMO,00,BHZ,34.945981,-106.457133,1671,145,0,0,Geotech KS-54000,3275080000,0.02,M/S,20,2008-06-30T20:00:00,2599-12-31T23:59:59
+IU,ANMO,10,BH1,34.945913,-106.457122,1767.2,48.8,64,90,Guralp CMG3-T,32805600000,0.02,M/S,40,2008-06-30T20:00:00,2599-12-31T23:59:59
+IU,ANMO,10,BH2,34.945913,-106.457122,1767.2,48.8,154,90,Guralp CMG3-T,32655000000,0.02,M/S,40,2008-06-30T20:00:00,2599-12-31T23:59:59
+IU,ANMO,10,BHZ,34.945913,-106.457122,1767.2,48.8,0,0,Guralp CMG3-T,33067200000,0.02,M/S,40,2008-06-30T20:00:00,2599-12-31T23:59:59
+------------------
+
+As a special case '--' can be used to match a blank (space, space)
+location code.
+.fi
+
+For each time-series written, metadata from the first line with
+matching source name parameters (network, station, location and
+channel) and time window (if specified) will be inserted into the SAC
+header.  All parameters are optional except for the first four fields
+specifying the source name parameters.
+
+Simple wildcarding: for the source name parameters that will be
+matched a '*' character in a field will match anything.  The BHZ
+metadata lines above, for example, can be (almost) summarized as:
+
+.nf
+IU,ANMO,*,BHZ,34.9459,-106.4571,1671,145,0,0,Geotech KS-54000,3456610000,0.02,M/S,20,2008-06-30T20:00:00,2599-12-31T23:59:59
+.fi
+
+.SH LIST FILES
+If an input file is prefixed with an '@' character the file is assumed
+to contain a list of file for input.  Multiple list files can be
+combined with multiple input files on the command line.  The last,
+space separated field on each line is assumed to be the file name to
+be read.
+
+An example of a simple text list:
+
+.nf
+TA.ELFS..LHE.R.mseed
+TA.ELFS..LHN.R.mseed
+TA.ELFS..LHZ.R.mseed
+.fi
+
+.SH AUTHOR
+.nf
+Chad Trabant
+IRIS Data Management Center
+
+In an effort to avoid reinventing the wheel and creating new bugs many
+of the core data processing routines were borrowed from other
+developments including, but not limited to, SAC 2000, PQLX, Seismic
+Handler and others.  Any new bugs introduced are mine.
+.fi

@@ -1,0 +1,169 @@
+2011.05x:
+	- Update libmseed to 2.6.
+	- Convert to using MSTraceList structures for efficiency.
+	- Allow values to -SC and -SI to start with a dash (negative).
+
+2011.027:
+	- Rework convolution codes to enable full transfer, a deconvolution
+	and convolution operation combined, in a single operation.
+	- Rework operation parsing to automatically combine a deconvolution
+	followed by a convolution into a transfer operation.
+
+2011.025:
+	- Add -TAP argument to perform symmetric time-series tapering.
+	- Return non-zero exit code for any processing errors.
+	- Add sanity check for high-pass filter corner above Nyquist.
+	- Update SAC metadata insertion to latest format with new fields
+	and time window checking. 
+	- Add -msi option to convert component inclination in metadata from
+	SEED (dip) to SAC convention.
+
+2010.137:
+	- Update evalresp to 3.3.3.
+
+2010.082: 0.9.3
+	- Fix writing of 32 and 64-bit floats in Mini-SEED and reorganize
+	conversion of samples to doubles to avoid duplicate allocation.
+	
+2010.076: 0.9.2
+	- Fix decimation.
+
+2010.068: 0.9.1
+	- Update MSTrace.samplecnt properly after decimation.
+
+2010.067: 0.9
+	- Update evalresp to 3.3.2.
+	- Update libmseed to 2.5.
+
+2010.062:
+	- Add -DEC decimation routine using function and default anti-alias
+	filters from SAC.
+
+2010.034:
+	- Start modifications for evalresp 3.3.1, new argument for evresp_itp.
+	- Change -Rid to -Red and reverse sense to match new evalresp usage.
+	- Add -Rts option to use the total sensitivity for RESP files.
+
+2009.244: 0.8
+	- Add -Ta option and findtaper() routine to automatically determine
+	taper parameters using the amplitude response.
+
+2009.221: 0.7
+	- Add -IT to preform trapezoidal (midpoint) integration.
+	- Separate specification of SAC input and output formats, the
+	SAC input specification (option -Sif) is not included in the usage.
+
+2009.217: 0.6
+	- Add -od option to specify output directory for writing files
+	when they are not explicitly specified.
+	
+2009.211: 0.5
+	- Add -SI option to scale by the inverse of the factor.
+
+2009.202: 0.4
+	- Add -c option to force channel/component name.
+
+2009.201: 0.3
+	- Fix highpass reverse filtering.
+	- Fix bandpass filtering option parsing.
+	- Update libmseed to 2.3.
+
+2009.194:
+	- Generalize addprocess() for increased flexibility and allow more
+	processing types to be added.
+	- Add -SC option to scale data values.
+	- Update evalresp to 3.3.0.
+	- Update libmseed to 2.3rc.
+
+2009.113: 0.2
+	- Retain original SAC headers and use as a template for output files
+	such that unmodified values are retained, e.g. picks, event info, etc.
+	- Calculate dependent variable minimum and maximum for SAC output.
+	- Default to writing SAC output files.
+	- Update to libmseed 2.2.
+
+2009.087: tracedsp 0.1
+	- Change program name to tracedsp.
+	- Add SAC input capability, autodetect format.
+	- Add input list file capability, files prefixed with '@' are expected
+	to contain a list of input files.
+
+2009.020: 0.8
+	- Update evalresp to 3.2.40.
+
+2008.152: 0.7
+	- Change filtering to do one pass in the forward direction followed
+	by one pass in the reverse direction to eliminate phase distortion.
+	- Add options -LP1, -HP1 and -BP1 to specify single pass filtering.
+
+2008.039: 0.6
+	- Skip input records that do not contain time-series data.
+
+2008.039: 0.5
+	- Update to libmseed 2.1.4.
+	- Comment out -S option until a better fix can be found.
+
+2007.178:
+	- Update to libmseed 2.1.3.
+	- Allow multiplexed input to be written as multiplexed Mini-SEED
+	output.
+	- Add warning when multiplexed input results in overwriting a 
+	specified output SAC file.
+
+2007.177:
+	- Update evalresp to 3.2.38.
+
+2007.149: 0.4
+	- Update to libmseed 2.1.2.
+	- Fix up and add diagnostic warnings to SAC poles and zeros file
+	reading.
+
+2007.142:
+	- Update to libmseed 2.1.1.
+	- Fix reading of metadata file to be much more robust.
+	- Store sub-millisecond time resolution in the begin (b)
+	and end (e) header variables for SAC output.
+
+2007.123:
+	- Add verbose warning in convolve() when the water level was reached
+	while inverting the response function.
+	- Add sanity checks to user-specified taper envelope frequencies.
+
+2007.101: 0.3
+	- Fix scaling of (de)convolution operations.
+	- Add -D2 differentiation operation.
+	- Add -RM remove mean operation.
+	- Update to libmseed 2.1.
+
+2007.092:
+	- Update to libmseed 2.0+2007.083
+	- Update all (de)convolution code from segtides including
+	evalresp support.
+	- Add evalresp sources.
+	- Add options to de/convolve using RESP responses.
+	- Rearrange data output and add capability to write binary SAC.
+
+2006.212: 0.2
+	- Update to libmseed 1.8.
+	- Update all (de)convolution code from segtides including many fixes.
+	- Add gcc32, gcc32debug, gcc64debug Makefile targets.
+	- Fix HP filter specification bug.
+
+2006.157:
+	- Add taper definition option
+	- Add -Wo option to specify prediction filter order for whitening.
+
+2006.152:
+	- Fix all the (de)whitening code.
+	- Update libmseed to 1.6.3.
+
+2006.148:
+	- Fix tapering in convolve.c.
+	- Fix double free.
+
+2006.100:
+	- Add SAC output
+	- Add -nm option to convert to nanometers from default meters.
+
+2006.065: 0.1
+	- Initial version.
