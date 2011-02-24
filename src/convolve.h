@@ -36,7 +36,7 @@ int convolve_resp (float data[], int npts, double delta,
 int next2 (int value);
 double spectraltaper (double freq, double fqh, double fql);
 int findtaper (double *taperfreq, double *xreal, double *ximag,
-	       int nfreqs, double delfreq);
+	       int nfreqs, double delfreq, double lcdBdown, double ucdBdown);
 int fft (double real[], double imag[], int nfreq, int direction);
 
 

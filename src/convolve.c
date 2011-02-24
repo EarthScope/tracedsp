@@ -13,7 +13,7 @@
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
  *
- * Modified: 2011.027
+ * Modified: 2011.054
  *********************************************************************/
 
 #include <stdio.h>
@@ -24,16 +24,11 @@
 
 #include <evresp.h>
 
+#include "convolve.h"
 #include "whiten.h"
 #include "getpzfr.h"
 
 #define PI 3.1415926535897932384626433
-
-int next2 (int value);
-double spectraltaper (double freq, double fqh, double fql);
-int findtaper (double *taperfreq, double *xreal, double *ximag,
-	       int nfreqs, double delfreq);
-int fft (double real[], double imag[], int nfft, int direction);
 
 
 /*********************************************************************
@@ -661,7 +656,7 @@ spectraltaper (double freq, double fqh, double fql)
 /*********************************************************************
  * findtaper:
  *
- * Determine taper parameters (frequecies) from the amplitude
+ * Determine spectral taper parameters (frequecies) from the amplitude
  * response.  This routine was designed primarily for responses with a
  * "flat" pass band.
  *
@@ -669,7 +664,7 @@ spectraltaper (double freq, double fqh, double fql)
  * using the following criterion:
  *
  * taperfreq[0] - lower cutoff frequency
- *   -> lowest frequency with an amplitude greater than 1% of the maximum amplitude
+ *   -> lowest frequency with amplitude greater than dB down from maximum
  *
  * taperfreq[1] - lower pass frequency
  *   -> 110% of the lower cutoff frequency
@@ -678,13 +673,16 @@ spectraltaper (double freq, double fqh, double fql)
  *   -> 95% of the upper cutoff frequency
  *
  * taperfreq[3] - upper cutoff frequency
- *   -> highest frequency with an amplitude greater than 1% of the maximum amplitude
+ *   -> highest frequency with amplitude greater than dB down from maximum
  *
  * taperfreq = input taper frequencies, -1.0 values to be replaced
- * xreal   = real portion of the response
- * ximag   = imaginary portion of the response
- * nfreqs  = number of frequencies
- * delfreq = frequency step
+ * xreal    = real portion of the response
+ * ximag    = imaginary portion of the response
+ * nfreqs   = number of frequencies
+ * delfreq  = frequency step
+ * lcdBdown = lower corner cutoff specified as dB down from maximum.
+ * ucdBdown = upper corner cutoff specified as dB down from maximum.
+ *              if dB down is -1 the default of 6dB will be used.
  *
  * Determined taper frequencies are stored directly in the taperfreq
  * parameters.
@@ -696,28 +694,34 @@ spectraltaper (double freq, double fqh, double fql)
  ********************************************************************/
 int
 findtaper (double *taperfreq, double *xreal, double *ximag,
-	   int nfreqs, double delfreq)
+	   int nfreqs, double delfreq,
+	   double lcdBdown, double ucdBdown)
 {
   int i;
   double amp;
   double maxamp = 0.0;
-  double minamp = 0.0;
   double lowestamp = 0.0;
   double highestamp = 0.0;
   double maxfreq = 0.0;
   double lowestfreq = 0.0;
   double highestfreq = 0.0;
+  double dBdelta = 0.0;
+  
+  /* Set default dBdown if needed */
+  if ( lcdBdown == -1 )
+    lcdBdown = 6.0;
+  if ( ucdBdown == -1 )
+    ucdBdown = 6.0;
   
   /* Search for a lower frequency taper cutoff */
   if ( taperfreq[0] == -1.0 )
     {
       maxamp = 0.0;
-      minamp = 0.0;
       lowestfreq = 0.0;
       
       /* Determine frequency of maximum amplitude while searching
-       * for the 1% of maximum cutoff at a lower frequency.
-       * The spectra in the first bin for DC (i==0) is specificly excluded */
+       * for lowest frequency with amplitude above the specified dB down.
+       * The spectra in the first bin for DC (i==0) is specifically excluded */
       for ( i = (nfreqs-1); i > 0; i-- )
 	{
 	  amp = sqrt (xreal[i] * xreal[i] + ximag[i] * ximag[i]);
@@ -727,11 +731,12 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	    {
 	      maxamp = amp;
 	      maxfreq = i * delfreq;
-	      minamp = amp * 0.01;
 	    }
 	  
+	  dBdelta = 20 * log10 (amp / maxamp);
+	  
 	  /* Track amplitude/frequency above the minimum amplitude */
-	  if ( amp >= minamp )
+	  if ( dBdelta >= lcdBdown )
 	    {
 	      lowestamp = amp;
 	      lowestfreq = i * delfreq;
@@ -752,11 +757,10 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
   if ( taperfreq[3] == -1.0 )
     {
       maxamp = 0.0;
-      minamp = 0.0;
       highestfreq = 0.0;
       
       /* Determine frequency of maximum amplitude while searching
-       * for the 1% of maximum cutoff at a higher frequency. */
+       * for highest frequency with amplitude above the specified dB down. */
       for ( i = 0; i < nfreqs-1; i++ )
 	{
 	  amp = sqrt (xreal[i] * xreal[i] + ximag[i] * ximag[i]);
@@ -766,11 +770,12 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	    {
 	      maxamp = amp;
 	      maxfreq = i * delfreq;
-	      minamp = amp * 0.01;
 	    }
 	  
+	  dBdelta = 20 * log10 (amp / maxamp);
+	  
 	  /* Track amplitude/frequency above the minimum amplitude */
-	  if ( amp >= minamp )
+	  if ( dBdelta >= ucdBdown )
 	    {
 	      highestamp = amp;
 	      highestfreq = i * delfreq;

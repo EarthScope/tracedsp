@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.053
+ * modified 2011.054
  ***************************************************************************/
 
 // Add stats output.
@@ -166,7 +166,7 @@ static char   *sacnet        = 0;    /* SAC network code override */
 static char   *sacloc        = 0;    /* SAC location ID override */
 static char   *metadatafile  = 0;    /* File containing metadata for output (SAC, etc.) */
 static int     prewhiten     = 0;    /* Prewhitening for [de]convolution, predictor order */
-static double *taperfreq     = 0;    /* Spectrum taper frequencies */
+static double *spectaperfreq = 0;    /* Spectrum taper frequencies */
 static flag    resptotalsens = 0;    /* Controls evalresp's usage of total sensitivity in RESP */
 static flag    respusedelay  = 0;    /* Controls evalresp's usage of estimated delay in RESP */
 static flag    respusename   = 1;    /* Controls evalresp's matching of Net, Sta, Loc and Chan */
@@ -630,18 +630,18 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 	  else
 	    {
 	      dreal = xreal; xreal = NULL;
-	      dimag = ximag; ximag = NULL;	  
+	      dimag = ximag; ximag = NULL;
 	    }
 	}
     }
   
   /* Check if tapering parameters need to be calculated for deconvolution */
-  if ( dreal && dimag && taperfreq &&
-       (taperfreq[0] == -1.0 || taperfreq[1] == -1.0 ||
-	taperfreq[2] == -1.0 || taperfreq[3] == -1.0) )
+  if ( dreal && dimag && spectaperfreq &&
+       (spectaperfreq[0] == -1.0 || spectaperfreq[1] == -1.0 ||
+	spectaperfreq[2] == -1.0 || spectaperfreq[3] == -1.0) )
     {
       /* Determine taper parameters for deconvolution response */
-      if ( findtaper (taperfreq, dreal, dimag, nfreqs, delfreq) )
+      if ( findtaper (spectaperfreq, dreal, dimag, nfreqs, delfreq, -1.0, -1.0) )
 	{
 	  fprintf (stderr, "Error determing spectral taper parameters\n");
 	  return -1;
@@ -649,12 +649,12 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
       
       if ( verbose )
 	fprintf (stderr, "Final spectral tapering: %g/%g => %g/%g\n",
-		 taperfreq[0], taperfreq[1], taperfreq[2], taperfreq[3]);
+		 spectaperfreq[0], spectaperfreq[1], spectaperfreq[2], spectaperfreq[3]);
     }
   
   /* Perform convolution, deconvolution or both */
   retval = convolve (fdata, seg->numsamples, 1.0/seg->samprate, nfreqs, nfft,
-		     creal, cimag, dreal, dimag, taperfreq, &prewhiten, verbose);
+		     creal, cimag, dreal, dimag, spectaperfreq, &prewhiten, verbose);
   
   /* Free response function arrays */
   if ( creal )
@@ -2982,17 +2982,17 @@ parameterProc (int argcount, char **argvec)
     {
       int parsed = 0;
 
-      taperfreq = (double *) malloc (4 * sizeof(double));
+      spectaperfreq = (double *) malloc (4 * sizeof(double));
       
-      if ( taperfreq == NULL )
+      if ( spectaperfreq == NULL )
 	{
 	  fprintf (stderr, "Error allocating memory\n");
 	  exit(1);
 	}
       
       parsed = sscanf (taperstr, "%lf/%lf/%lf/%lf",
-		       &taperfreq[0], &taperfreq[1],
-		       &taperfreq[2], &taperfreq[3]);
+		       &spectaperfreq[0], &spectaperfreq[1],
+		       &spectaperfreq[2], &spectaperfreq[3]);
       
       if ( parsed != 4 )
 	{
@@ -3001,19 +3001,19 @@ parameterProc (int argcount, char **argvec)
 	  exit(1);
 	}
 
-      if ( taperfreq[0] > taperfreq[1] )
+      if ( spectaperfreq[0] > spectaperfreq[1] )
 	{
 	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", taperstr);
 	  fprintf (stderr, "Cut-off frequency of lower taper bound (%g) cannot be greater than pass frequency (%g)\n",
-		   taperfreq[0], taperfreq[1]);
+		   spectaperfreq[0], spectaperfreq[1]);
 	  exit(1);
 	}
 
-      if ( taperfreq[2] > taperfreq[3] )
+      if ( spectaperfreq[2] > spectaperfreq[3] )
 	{
 	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", taperstr);
 	  fprintf (stderr, "Cut-off frequency of upper taper bound (%g) cannot be less than pass frequency (%g)\n",
-		   taperfreq[3], taperfreq[2]);
+		   spectaperfreq[3], spectaperfreq[2]);
 	  exit(1);
 	}
     }
