@@ -13,7 +13,7 @@
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
  *
- * Modified: 2011.054
+ * Modified: 2011.055
  *********************************************************************/
 
 #include <stdio.h>
@@ -682,7 +682,7 @@ spectraltaper (double freq, double fqh, double fql)
  * delfreq  = frequency step
  * lcdBdown = lower corner cutoff specified as dB down from maximum.
  * ucdBdown = upper corner cutoff specified as dB down from maximum.
- *              if dB down is -1 the default of 6dB will be used.
+ *              if dB down is negative a default of 6dB will be used.
  *
  * Determined taper frequencies are stored directly in the taperfreq
  * parameters.
@@ -708,9 +708,9 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
   double dBdelta = 0.0;
   
   /* Set default dBdown if needed */
-  if ( lcdBdown == -1 )
+  if ( lcdBdown < 0.0 )
     lcdBdown = 6.0;
-  if ( ucdBdown == -1 )
+  if ( ucdBdown < 0.0 )
     ucdBdown = 6.0;
   
   /* Search for a lower frequency taper cutoff */
@@ -736,7 +736,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	  dBdelta = 20 * log10 (amp / maxamp);
 	  
 	  /* Track amplitude/frequency above the minimum amplitude */
-	  if ( dBdelta >= lcdBdown )
+	  if ( -dBdelta <= lcdBdown )
 	    {
 	      lowestamp = amp;
 	      lowestfreq = i * delfreq;
@@ -775,7 +775,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	  dBdelta = 20 * log10 (amp / maxamp);
 	  
 	  /* Track amplitude/frequency above the minimum amplitude */
-	  if ( dBdelta >= ucdBdown )
+	  if ( -dBdelta <= ucdBdown )
 	    {
 	      highestamp = amp;
 	      highestfreq = i * delfreq;

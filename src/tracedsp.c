@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.054
+ * modified 2011.055
  ***************************************************************************/
 
 // Add stats output.
@@ -19,6 +19,8 @@
 // Add resampling process
 
 // Add dbdown specification for -Ta
+
+// Add trim/lop segment synchronization process
 
 // Add processing log, a summary line for each operation
 
@@ -167,6 +169,8 @@ static char   *sacloc        = 0;    /* SAC location ID override */
 static char   *metadatafile  = 0;    /* File containing metadata for output (SAC, etc.) */
 static int     prewhiten     = 0;    /* Prewhitening for [de]convolution, predictor order */
 static double *spectaperfreq = 0;    /* Spectrum taper frequencies */
+static double  lcdBdown      = -1.0; /* Lower corner dB down cutoff */
+static double  ucdBdown      = -1.0; /* Upper corner dB down cutoff */
 static flag    resptotalsens = 0;    /* Controls evalresp's usage of total sensitivity in RESP */
 static flag    respusedelay  = 0;    /* Controls evalresp's usage of estimated delay in RESP */
 static flag    respusename   = 1;    /* Controls evalresp's matching of Net, Sta, Loc and Chan */
@@ -641,15 +645,16 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 	spectaperfreq[2] == -1.0 || spectaperfreq[3] == -1.0) )
     {
       /* Determine taper parameters for deconvolution response */
-      if ( findtaper (spectaperfreq, dreal, dimag, nfreqs, delfreq, -1.0, -1.0) )
+      if ( findtaper (spectaperfreq, dreal, dimag, nfreqs, delfreq, lcdBdown, ucdBdown) )
 	{
 	  fprintf (stderr, "Error determing spectral taper parameters\n");
 	  return -1;
 	}
       
       if ( verbose )
-	fprintf (stderr, "Final spectral tapering: %g/%g => %g/%g\n",
-		 spectaperfreq[0], spectaperfreq[1], spectaperfreq[2], spectaperfreq[3]);
+	fprintf (stderr, "Final spectral tapering (Hz): %g/%g => %g/%g [cutoffs %g/%g]\n",
+		 spectaperfreq[0], spectaperfreq[1], spectaperfreq[2], spectaperfreq[3],
+		 lcdBdown, ucdBdown);
     }
   
   /* Perform convolution, deconvolution or both */
@@ -1735,10 +1740,10 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
    * If bytes have already been written: append
    * If nothing has been written: overwrite */
   char *mode = ( outputbytes > 0 ) ? "ab" : "wb";
-  
+
   if ( ! id || ! seg || ! outputfile )
     return -1;
-
+  
   if ( seg->numsamples <= 0 || seg->samprate == 0.0 )
     return 0;
   
@@ -1932,6 +1937,13 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
   packedrecords = mst_pack (mst, recordHandler, ofp, packreclen, packencoding,
 			    byteorder, &packedsamples, 1, verbose-2, msr);
   
+  /* Unless anerror occurred the sample buffer has been released, adjust */
+  if ( packedrecords >= 0 )
+    {
+      seg->datasamples = NULL;
+      seg->numsamples = 0;
+    }
+  
   if ( verbose )
     fprintf (stderr, "Packed %d samples into %d records\n",
 	     packedsamples, packedrecords);
@@ -1949,7 +1961,7 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
     fclose (ofp);
   
   return packedsamples;
-}  /* End of writeMSEED() */
+}  /* End of writeMSEED) */
 
 
 /***************************************************************************
@@ -2651,9 +2663,10 @@ integrateTrap (void *input, char inputtype, int length, double halfstep, void *o
 static int
 parameterProc (int argcount, char **argvec)
 {
-  char  *filtstr = 0;
   char  *filename;
-  char  *taperstr = 0;
+  char  *filtstr = NULL;
+  char  *spectaperstr = NULL;
+  char  *dBdownstr = NULL;
   char  *tptr;
   int    optind;
   
@@ -2776,13 +2789,13 @@ parameterProc (int argcount, char **argvec)
 	  if ( filename )
 	    addProcess (PROC_CONVOLVE, filename, NULL, PROC_DECONVSAC, 0, 0.0, 0.0);
         }
-      else if (strcmp (argvec[optind], "-T") == 0)
+      else if (strcmp (argvec[optind], "-ST") == 0)
 	{
-	  taperstr = getOptVal(argcount, argvec, optind++, 1);
+	  spectaperstr = getOptVal(argcount, argvec, optind++, 1);
 	}
-      else if (strcmp (argvec[optind], "-Ta") == 0)
+      else if (strcmp (argvec[optind], "-STa") == 0)
 	{
-	  taperstr = "-1.0/-1.0/-1.0/-1.0";
+	  dBdownstr = getOptVal(argcount, argvec, optind++, 1);
 	}
       else if (strcmp (argvec[optind], "-W") == 0)
 	{
@@ -2978,43 +2991,85 @@ parameterProc (int argcount, char **argvec)
     prewhiten *= -1;
   
   /* Parse taper envelope frequencies */
-  if ( taperstr )
+  if ( spectaperstr )
     {
       int parsed = 0;
-
-      spectaperfreq = (double *) malloc (4 * sizeof(double));
       
-      if ( spectaperfreq == NULL )
+      if ( ! spectaperfreq )
 	{
-	  fprintf (stderr, "Error allocating memory\n");
-	  exit(1);
+	  if ( (spectaperfreq = (double *) malloc (4 * sizeof(double))) == NULL )
+	    {
+	      fprintf (stderr, "Error allocating memory\n");
+	      exit(1);
+	    }
+	  
+	  spectaperfreq[0] = -1.0;
+	  spectaperfreq[1] = -1.0;
+	  spectaperfreq[2] = -1.0;
+	  spectaperfreq[3] = -1.0;
 	}
       
-      parsed = sscanf (taperstr, "%lf/%lf/%lf/%lf",
+      parsed = sscanf (spectaperstr, "%lf/%lf/%lf/%lf",
 		       &spectaperfreq[0], &spectaperfreq[1],
 		       &spectaperfreq[2], &spectaperfreq[3]);
       
       if ( parsed != 4 )
 	{
-	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", taperstr);
+	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", spectaperstr);
 	  fprintf (stderr, "Try %s -h for usage\n", PACKAGE);
 	  exit(1);
 	}
-
+      
       if ( spectaperfreq[0] > spectaperfreq[1] )
 	{
-	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", taperstr);
+	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", spectaperstr);
 	  fprintf (stderr, "Cut-off frequency of lower taper bound (%g) cannot be greater than pass frequency (%g)\n",
 		   spectaperfreq[0], spectaperfreq[1]);
 	  exit(1);
 	}
-
+      
       if ( spectaperfreq[2] > spectaperfreq[3] )
 	{
-	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", taperstr);
+	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", spectaperstr);
 	  fprintf (stderr, "Cut-off frequency of upper taper bound (%g) cannot be less than pass frequency (%g)\n",
 		   spectaperfreq[3], spectaperfreq[2]);
 	  exit(1);
+	}
+    }
+  
+  /* Parse dB down auto taper cutoff */
+  if ( dBdownstr )
+    {
+      if ( ! spectaperfreq )
+	{
+	  if ( (spectaperfreq = (double *) malloc (4 * sizeof(double))) == NULL )
+	    {
+	      fprintf (stderr, "Error allocating memory\n");
+	      exit(1);
+	    }
+	  
+	  spectaperfreq[0] = -1.0;
+	  spectaperfreq[1] = -1.0;
+	  spectaperfreq[2] = -1.0;
+	  spectaperfreq[3] = -1.0;
+	}
+      
+      /* dB down cutoff string is lowercorner[/uppercorner] */
+      
+      /* Check for lower & upper corner cutoff separator */
+      tptr = strchr (dBdownstr, '/');
+      
+      /* Parse lowercorner/uppercorner cutoff pair */
+      if ( tptr )
+	{
+	  *tptr++ = '\0';
+	  lcdBdown = strtod (dBdownstr, NULL);
+	  ucdBdown = strtod (tptr, NULL);
+	}
+      /* Parse lowercorner cutoff */
+      else
+	{
+	  lcdBdown = strtod (dBdownstr, NULL);
 	}
     }
   
@@ -3614,9 +3669,9 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       
       lastlp = lastlp->next;
     }
-  
+
   /* If this is a paired deconvolution-convolution option add operation to last entry */
-  if ( type == PROC_CONVOLVE && lastlp->type == PROC_CONVOLVE && lastlp->filetype[1] == 0 &&
+  if ( type == PROC_CONVOLVE && lastlp && lastlp->type == PROC_CONVOLVE && lastlp->filetype[1] == 0 &&
        (lastlp->filetype[0] == PROC_DECONVRESP || lastlp->filetype[0] == PROC_DECONVSAC) &&
        (filetype == PROC_CONVRESP || filetype == PROC_CONVSAC) )
     {
@@ -3730,9 +3785,9 @@ usage (void)
 	   " -DR respfile[:#:#] Specify SEED RESP file/dir for deconvolution\n"
 	   " -CS pzfile    Specify poles and zeros file for convolution\n"
 	   " -DS pzfile    Specify poles and zeros file for deconvolution\n"
-	   " -T  freqs     Specify envelope for a spectrum taper for convolution operations\n"
+	   " -ST freqs     Specify envelope for a spectrum taper for (de)convolution operations\n"
 	   "                 Frequencies are specify as: 'f1/f2/f3/f4'\n"
-	   " -Ta           Automatically determine envelope for a spectrum taper\n"
+	   " -STa dBdown   Automatically determine envelope for a spectrum taper\n"
 	   " -W            Use prewhitening and dewhitening for convolution operations\n"
 	   " -Wo order     Specify prediction filter order used for whitening, default: 6\n"
 	   " -Rts          Use the total sensitivity in SEED RESP files instead of gains\n"

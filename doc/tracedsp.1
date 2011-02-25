@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2011/01/27
+.TH TRACEDSP 1 2011/02/24
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -145,18 +145,21 @@ When a deconvolution operation is directly followed by a convolution
 operation they will be combined into a composite transfer operation
 for stability and efficiency.
 
-.IP "-T \fIf1/f2/f3/f4\fP"
+.IP "-ST \fIf1/f2/f3/f4\fP"
 Specify a envelope for a spectrum taper for (de)convolution
 operations, frequencies are specified in Hertz.  This cosine taper
 scales the spectrum from 0 to 1 between f1 and f2 and from 1 to 0
 between f3 and f4.
 
-.IP "-Ta"
+.IP "-STa lowerdBdown[/upperdBdown]"
 Automatically determine envelope for a spectrum taper for
-deconvolution.  A pass band is determined for all frequencies with
-amplitude responses greater than 1% of the maximum amplitude.  This
-algorithm is designed to work with flat responses, i.e. a reponse in
-velocity for an instrument which is flat to velocity.
+deconvolution.  A pass band is determined for all frequencies with the
+lower and upper corner cutoffs defined in terms of dB down from the
+maximum amplitude.  The upper corner definition is optional and
+defaults to 6 dB down.  This algorithm is designed to work with flat
+responses, i.e. a reponse in velocity for an instrument which is flat
+to velocity.  Other combinations will likely result in unsatisfactory
+results.
 
 .IP "-W"
 Prewhiten the time-series data before and dewhiten after any
@@ -190,7 +193,8 @@ response in the specified RESP file.
 
 .IP "-Ru \fIunits\fP"
 Specify the output units for the response calculated with evalresp for
-SEED RESP (de)convolution operations.
+SEED RESP (de)convolution operations.  By default the output units of
+the response will be the input units specified in the RESP.
 
 .IP "-LP \fIfrequency[/order]\fP"
 Low-pass filter the time-series using an IIR filter derived from a low
