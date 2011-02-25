@@ -13,7 +13,7 @@
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
  *
- * Modified: 2011.055
+ * Modified: 2011.056
  *********************************************************************/
 
 #include <stdio.h>
@@ -162,6 +162,35 @@ convolve (float data[], int npts, double delta, int nfreqs, int nfft,
       /* If only deconvolution, redirect the creal & cimag pointers */
       creal = dreal;
       cimag = dimag;
+    }
+  
+  /* Print tapered composite response */
+  if ( verbose > 3 )
+    {
+      double amp;
+      double phase;
+      double real;
+      double imag;
+      
+      fprintf (stderr, "Composite convolution operator (FAP):\n");
+      for ( i = 0; i < nfreqs; i++ )
+	{
+	  freq = i * delfreq;
+	  
+	  if ( taperfreq )
+	    fac = (spectraltaper (freq, taperfreq[1], taperfreq[0]) *
+		   spectraltaper (freq, taperfreq[2], taperfreq[3]));
+	  else
+	    fac = 1.0;
+	  
+	  real = creal[i] * fac;
+	  imag = cimag[i] * fac;
+	  
+	  amp = sqrt (real*real + imag*imag);
+	  phase = atan2 (imag, real + 1.0e-200) * 180/PI;
+	  
+	  fprintf (stderr, "%.6E  %.6E  %.6E\n", freq, amp, phase);
+	}
     }
   
   /* Scale and optionally taper the frequency response function */
@@ -682,7 +711,7 @@ spectraltaper (double freq, double fqh, double fql)
  * delfreq  = frequency step
  * lcdBdown = lower corner cutoff specified as dB down from maximum.
  * ucdBdown = upper corner cutoff specified as dB down from maximum.
- *              if dB down is negative a default of 6dB will be used.
+ *              if dB down is negative a default of 3dB will be used.
  *
  * Determined taper frequencies are stored directly in the taperfreq
  * parameters.
@@ -709,9 +738,9 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
   
   /* Set default dBdown if needed */
   if ( lcdBdown < 0.0 )
-    lcdBdown = 6.0;
+    lcdBdown = 3.0;
   if ( ucdBdown < 0.0 )
-    ucdBdown = 6.0;
+    ucdBdown = 3.0;
   
   /* Search for a lower frequency taper cutoff */
   if ( taperfreq[0] == -1.0 )
