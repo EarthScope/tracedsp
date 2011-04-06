@@ -1,8 +1,8 @@
 /**********************************************************************
  * iirfilter.c:
  *
- * Routines to filter time-series data using an IIR filter derived
- * from low and/or high filter orders and cutoff frequencies.
+ * Routines to filter time-series data using a Butterworth IIR filter
+ * derived from low and/or high filter orders and cutoff frequencies.
  *
  * The iirfilter() routine is the entry point and only routine exposed
  * in the iirfilter.h include.
@@ -44,9 +44,9 @@ void highpass (double fc, double dt, int n, iircomplex *p, double *b);
 /**********************************************************************
  * iirfilter: filter a timeseries with a derived IIR definition
  *
- * Filter a timeseries using an IIR digital filter determined from
- * high and low filter orders and cutoff frequencies.  Either the high
- * or low order filter is optional or both may be used for a bandpass
+ * Filter a timeseries using a Butterworth IIR digital filter determined
+ * from high and low filter orders and cutoff frequencies.  Either the 
+ * high or low order filter is optional or both may be used for a bandpass
  * filter.
  *
  * The *output data array will be allocated if necessary and it is up
@@ -529,7 +529,7 @@ applyfilter (double a1, double a2, double b1, double b2,
  *   p = pole locations (RETURNED)
  *   b = gain factor for filter (RETURNED)
  *
- * This routine calculates a continuous Butterwoth low-pass IIR with
+ * This routine calculates a continuous Butterworth low-pass IIR with
  * specified cutoff frequency.  A discrete filter is then calculated
  * utilizing the bilinear transform.  Methods used here follow those
  * in Digital Filters and Signal Processing by Leland B. Jackson.
