@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.055
+ * modified 2011.137
  ***************************************************************************/
 
 // Add stats output.
@@ -16,9 +16,11 @@
 
 // Add rotation code and options
 
-// Add resampling process
+// Add envelope calculation
 
-// Add dbdown specification for -Ta
+// Perform polynomial response corrections
+
+// Add resampling process
 
 // Add trim/lop segment synchronization process
 
@@ -40,6 +42,7 @@
 #include "decimate.h"
 #include "rotate.h"
 #include "taper.h"
+#include "envelope.h"
 #include "sacformat.h"
 
 #define VERSION "0.9.4dev"
@@ -86,6 +89,8 @@ struct proclink {
 #define PROC_SCALE       13
 #define PROC_DECIMATE    14
 #define PROC_TAPER       15
+#define PROC_ENVELOPE    16
+
 
 /* Default order of high/low pass filter */
 #define DEFAULT_FILTER_ORDER 4
@@ -115,6 +120,7 @@ static int procRMean (MSTraceSeg *seg, struct proclink *plp);
 static int procScale (MSTraceSeg *seg, struct proclink *plp);
 static int procDecimate (MSTraceSeg *seg, struct proclink *plp);
 static int procTaper (MSTraceSeg *seg, struct proclink *plp);
+static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
 
 static int64_t readMSEED (char *mseedfile, MSTraceList *mstl);
 static int64_t readSAC (char *sacfile, MSTraceList *mstl);
@@ -168,7 +174,7 @@ static char   *sacnet        = 0;    /* SAC network code override */
 static char   *sacloc        = 0;    /* SAC location ID override */
 static char   *metadatafile  = 0;    /* File containing metadata for output (SAC, etc.) */
 static int     prewhiten     = 0;    /* Prewhitening for [de]convolution, predictor order */
-static double *spectaperfreq = 0;    /* Spectrum taper frequencies */
+static double *freqlimit     = 0;    /* Frequency limits for deconvolution */
 static double  lcdBdown      = -1.0; /* Lower corner dB down cutoff */
 static double  ucdBdown      = -1.0; /* Upper corner dB down cutoff */
 static flag    resptotalsens = 0;    /* Controls evalresp's usage of total sensitivity in RESP */
@@ -360,6 +366,16 @@ main (int argc, char **argv)
 		  if ( procTaper (seg, plp) )
 		    {
 		      fprintf (stderr, "Error tapering time-series %s\n",
+			       srcname);
+		      errflag = -1;
+		      break;
+		    }
+		}
+	      else if ( plp->type == PROC_ENVELOPE )
+		{
+		  if ( procEnvelope (seg, plp) )
+		    {
+		      fprintf (stderr, "Error calculating envelope of time-series %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -639,27 +655,27 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 	}
     }
   
-  /* Check if tapering parameters need to be calculated for deconvolution */
-  if ( dreal && dimag && spectaperfreq &&
-       (spectaperfreq[0] == -1.0 || spectaperfreq[1] == -1.0 ||
-	spectaperfreq[2] == -1.0 || spectaperfreq[3] == -1.0) )
+  /* Check if frequency limit parameters need to be calculated for deconvolution */
+  if ( dreal && dimag && freqlimit &&
+       (freqlimit[0] == -1.0 || freqlimit[1] == -1.0 ||
+	freqlimit[2] == -1.0 || freqlimit[3] == -1.0) )
     {
-      /* Determine taper parameters for deconvolution response */
-      if ( findtaper (spectaperfreq, dreal, dimag, nfreqs, delfreq, lcdBdown, ucdBdown) )
+      /* Determine frequency limits for deconvolution response */
+      if ( findtaper (freqlimit, dreal, dimag, nfreqs, delfreq, lcdBdown, ucdBdown) )
 	{
-	  fprintf (stderr, "Error determing spectral taper parameters\n");
+	  fprintf (stderr, "Error determing deconvolution frequency limit parameters\n");
 	  return -1;
 	}
       
       if ( verbose )
-	fprintf (stderr, "Final spectral tapering (Hz): %g/%g => %g/%g [cutoffs %g/%g]\n",
-		 spectaperfreq[0], spectaperfreq[1], spectaperfreq[2], spectaperfreq[3],
+	fprintf (stderr, "Final frequency limits (Hz): %g/%g => %g/%g [cutoffs %g/%g]\n",
+		 freqlimit[0], freqlimit[1], freqlimit[2], freqlimit[3],
 		 lcdBdown, ucdBdown);
     }
   
   /* Perform convolution, deconvolution or both */
   retval = convolve (fdata, seg->numsamples, 1.0/seg->samprate, nfreqs, nfft,
-		     creal, cimag, dreal, dimag, spectaperfreq, &prewhiten, verbose);
+		     creal, cimag, dreal, dimag, freqlimit, &prewhiten, verbose);
   
   /* Free response function arrays */
   if ( creal )
@@ -1078,6 +1094,72 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
   
   return 0;
 }  /* End of procTaper() */
+
+
+/***************************************************************************
+ * procEnvelope:
+ *
+ * Calculates envelope of time series data.
+ *
+ * Returns 0 on success and non-zero on error.
+ ***************************************************************************/
+static int
+procEnvelope (MSTraceSeg *seg, struct proclink *plp)
+{
+  int idx;
+  int retval;
+  int32_t *idata = seg->datasamples;
+  float *fdata = seg->datasamples;
+  double *ddata = seg->datasamples;
+  
+  if ( ! seg || ! plp )
+    return -1;
+  
+  /* Convert integer and float samples to doubles */
+  if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
+    {
+      /* Allocate memory for double samples */
+      if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
+	{
+	  fprintf (stderr, "procEnvelope(): Cannot allocate memory\n");
+	  return -1;
+	}
+      
+      /* Convert samples to doubles */
+      if ( seg->sampletype == 'i' )
+	for (idx = 0; idx < seg->numsamples; idx++)
+	  ddata[idx] = (double) idata[idx];
+      else
+	for (idx = 0; idx < seg->numsamples; idx++)
+	  ddata[idx] = (double) fdata[idx];
+      
+      free (seg->datasamples);
+      seg->datasamples = ddata;
+      seg->sampletype = 'd';
+    }
+  
+  if ( seg->sampletype != 'd' )
+    {
+      fprintf (stderr, "procEnvelope(): Unrecognized sample type: '%c'\n", seg->sampletype);
+      return -1;
+    }
+  
+  if ( verbose )
+    {
+      fprintf (stderr, "Calculating envelope of time-series\n");
+    }
+  
+  /* Calculate envelope */
+  retval = envelope (seg->datasamples, seg->numsamples);
+  
+  if ( retval < 0 )
+    {
+      fprintf (stderr, "procEnvelope(): Error caluclating envelope of time-series\n");
+      return -1;      
+    }
+  
+  return 0;
+}  /* End of procEnvelope() */
 
 
 /***************************************************************************
@@ -2665,7 +2747,7 @@ parameterProc (int argcount, char **argvec)
 {
   char  *filename;
   char  *filtstr = NULL;
-  char  *spectaperstr = NULL;
+  char  *freqlimitstr = NULL;
   char  *dBdownstr = NULL;
   char  *tptr;
   int    optind;
@@ -2789,11 +2871,11 @@ parameterProc (int argcount, char **argvec)
 	  if ( filename )
 	    addProcess (PROC_CONVOLVE, filename, NULL, PROC_DECONVSAC, 0, 0.0, 0.0);
         }
-      else if (strcmp (argvec[optind], "-ST") == 0)
+      else if (strcmp (argvec[optind], "-FL") == 0)
 	{
-	  spectaperstr = getOptVal(argcount, argvec, optind++, 1);
+	  freqlimitstr = getOptVal(argcount, argvec, optind++, 1);
 	}
-      else if (strcmp (argvec[optind], "-STa") == 0)
+      else if (strcmp (argvec[optind], "-FLa") == 0)
 	{
 	  dBdownstr = getOptVal(argcount, argvec, optind++, 1);
 	}
@@ -2934,6 +3016,10 @@ parameterProc (int argcount, char **argvec)
 	  
 	  addProcess (PROC_TAPER, NULL, NULL, tapertype, 0, taperwidth, 0.0);
         }
+      else if (strcmp (argvec[optind], "-ENV") == 0)
+        {
+	  addProcess (PROC_ENVELOPE, NULL, NULL, 0, 0, 0.0, 0.0);
+        }
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
 	{
@@ -2990,68 +3076,68 @@ parameterProc (int argcount, char **argvec)
   if ( prewhiten < 0 )
     prewhiten *= -1;
   
-  /* Parse taper envelope frequencies */
-  if ( spectaperstr )
+  /* Parse frequency limits string */
+  if ( freqlimitstr )
     {
       int parsed = 0;
       
-      if ( ! spectaperfreq )
+      if ( ! freqlimit )
 	{
-	  if ( (spectaperfreq = (double *) malloc (4 * sizeof(double))) == NULL )
+	  if ( (freqlimit = (double *) malloc (4 * sizeof(double))) == NULL )
 	    {
 	      fprintf (stderr, "Error allocating memory\n");
 	      exit(1);
 	    }
 	  
-	  spectaperfreq[0] = -1.0;
-	  spectaperfreq[1] = -1.0;
-	  spectaperfreq[2] = -1.0;
-	  spectaperfreq[3] = -1.0;
+	  freqlimit[0] = -1.0;
+	  freqlimit[1] = -1.0;
+	  freqlimit[2] = -1.0;
+	  freqlimit[3] = -1.0;
 	}
       
-      parsed = sscanf (spectaperstr, "%lf/%lf/%lf/%lf",
-		       &spectaperfreq[0], &spectaperfreq[1],
-		       &spectaperfreq[2], &spectaperfreq[3]);
+      parsed = sscanf (freqlimitstr, "%lf/%lf/%lf/%lf",
+		       &freqlimit[0], &freqlimit[1],
+		       &freqlimit[2], &freqlimit[3]);
       
       if ( parsed != 4 )
 	{
-	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", spectaperstr);
+	  fprintf (stderr, "Deconvolution frequency limits incorrectly: %s\n", freqlimitstr);
 	  fprintf (stderr, "Try %s -h for usage\n", PACKAGE);
 	  exit(1);
 	}
       
-      if ( spectaperfreq[0] > spectaperfreq[1] )
+      if ( freqlimit[0] > freqlimit[1] )
 	{
-	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", spectaperstr);
-	  fprintf (stderr, "Cut-off frequency of lower taper bound (%g) cannot be greater than pass frequency (%g)\n",
-		   spectaperfreq[0], spectaperfreq[1]);
+	  fprintf (stderr, "Deconvolution frequency limits specified incorrectly: %s\n", freqlimitstr);
+	  fprintf (stderr, "Cut-off frequency of lower bound (%g) cannot be greater than pass frequency (%g)\n",
+		   freqlimit[0], freqlimit[1]);
 	  exit(1);
 	}
       
-      if ( spectaperfreq[2] > spectaperfreq[3] )
+      if ( freqlimit[2] > freqlimit[3] )
 	{
-	  fprintf (stderr, "Taper frequcies specified incorrectly: %s\n", spectaperstr);
-	  fprintf (stderr, "Cut-off frequency of upper taper bound (%g) cannot be less than pass frequency (%g)\n",
-		   spectaperfreq[3], spectaperfreq[2]);
+	  fprintf (stderr, "Deconvolution freqency limits specified incorrectly: %s\n", freqlimitstr);
+	  fprintf (stderr, "Cut-off frequency of upper bound (%g) cannot be less than pass frequency (%g)\n",
+		   freqlimit[3], freqlimit[2]);
 	  exit(1);
 	}
     }
   
-  /* Parse dB down auto taper cutoff */
+  /* Parse dB down auto limit cutoff */
   if ( dBdownstr )
     {
-      if ( ! spectaperfreq )
+      if ( ! freqlimit )
 	{
-	  if ( (spectaperfreq = (double *) malloc (4 * sizeof(double))) == NULL )
+	  if ( (freqlimit = (double *) malloc (4 * sizeof(double))) == NULL )
 	    {
 	      fprintf (stderr, "Error allocating memory\n");
 	      exit(1);
 	    }
 	  
-	  spectaperfreq[0] = -1.0;
-	  spectaperfreq[1] = -1.0;
-	  spectaperfreq[2] = -1.0;
-	  spectaperfreq[3] = -1.0;
+	  freqlimit[0] = -1.0;
+	  freqlimit[1] = -1.0;
+	  freqlimit[2] = -1.0;
+	  freqlimit[3] = -1.0;
 	}
       
       /* dB down cutoff string is lowercorner[/uppercorner] */
@@ -3773,7 +3859,7 @@ usage (void)
 	   " -ME encoding  Encoding format for SEED output data, default is 4 (floats)\n"
 	   " -Sf format    Specify SAC output format (default is 2:binary)\n"
            "                 1=alpha, 2=binary (host byte order),\n"
-           "                 3=binary (little-endian), 4=binary (big-endian)\n" 
+           "                 3=binary (little-endian), 4=binary (big-endian)\n"
 	   " -m metafile   File containing station metadata for SAC output\n"
            " -msi          Convert component inclination/dip from SEED to SAC convention\n"
 	   " -c channel    Set channel/component name for processed output\n"
@@ -3785,9 +3871,9 @@ usage (void)
 	   " -DR respfile[:#:#] Specify SEED RESP file/dir for deconvolution\n"
 	   " -CS pzfile    Specify poles and zeros file for convolution\n"
 	   " -DS pzfile    Specify poles and zeros file for deconvolution\n"
-	   " -ST freqs     Specify envelope for a spectrum taper for (de)convolution operations\n"
+	   " -FL freqs     Specify frequency limits for deconvolution operations\n"
 	   "                 Frequencies are specify as: 'f1/f2/f3/f4'\n"
-	   " -STa dBdown   Automatically determine envelope for a spectrum taper\n"
+	   " -FLa dBdown   Automatically determine envelope for a frequency limits\n"
 	   " -W            Use prewhitening and dewhitening for convolution operations\n"
 	   " -Wo order     Specify prediction filter order used for whitening, default: 6\n"
 	   " -Rts          Use the total sensitivity in SEED RESP files instead of gains\n"
@@ -3812,6 +3898,7 @@ usage (void)
 	   " -SI factor    Scale the data samples by inverse of specified factor\n"
 	   " -DEC factor   Decimate time series by specified factor\n"
 	   " -TAP width[:type]  Apply symmetric taper to time series\n"
+	   " -ENV          Calculate envelope of time series\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
 	   "\n");

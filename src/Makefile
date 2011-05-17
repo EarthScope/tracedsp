@@ -11,7 +11,7 @@ BIN = tracedsp
 LDFLAGS = -L../libmseed -L../evalresp/.libs
 LDLIBS = -lmseed -lm -levresp
 
-OBJS = $(BIN).o iirfilter.o complex.o getpzfr.o whiten.o convolve.o decimate.o taper.o rotate.o
+OBJS = $(BIN).o iirfilter.o complex.o getpzfr.o whiten.o convolve.o decimate.o taper.o envelope.o rotate.o
 
 all: $(BIN)
 
