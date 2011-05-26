@@ -1,8 +1,10 @@
+2011.136:
+        - Change -T and -Ta to -FL and -FLa, to avoid confusion.
+
 2011.055:
 	- Update libmseed to 2.6.
 	- Convert to using MSTraceList structures for efficiency.
 	- Allow values to -SC and -SI to start with a dash (negative).
-	- Change -T and -Ta to -ST and -STa.
 
 2011.027:
 	- Rework convolution codes to enable full transfer, a deconvolution

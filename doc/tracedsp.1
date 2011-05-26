@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2011/02/25
+.TH TRACEDSP 1 2011/05/16
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -145,22 +145,21 @@ When a deconvolution operation is directly followed by a convolution
 operation they will be combined into a composite transfer operation
 for stability and efficiency.
 
-.IP "-ST \fIf1/f2/f3/f4\fP"
-Specify a envelope for a spectrum taper for (de)convolution
-operations, frequencies are specified in Hertz.  This cosine taper
+.IP "-FL \fIf1/f2/f3/f4\fP"
+Specify the frequency limits for deconvolution operations, frequencies
+are specified in Hertz.  The limits are applied as a cosine taper that
 scales the spectrum from 0 to 1 between f1 and f2 and from 1 to 0
-between f3 and f4.
+between f3 and f4 in the frequency domain.
 
-.IP "-STa lowerdBdown[/upperdBdown]"
-Automatically determine envelope for a spectrum taper for
-deconvolution.  A pass band is determined for all frequencies with the
-lower and upper corner cutoffs defined in terms of dB down from the
-maximum amplitude.  The upper corner definition is optional and
-defaults to 3 dB down.  This algorithm is designed to work with flat
-responses, i.e. a reponse in velocity for an instrument which is flat
-to velocity.  Other combinations will likely result in unsatisfactory
-results, i.e. a SAC PZ response in displacement for a sensor flat to
-velocity.
+.IP "-FLa lowerdBdown[/upperdBdown]"
+Automatically determine frequency limits for deconvolution.  A pass
+band is determined for all frequencies with the lower and upper corner
+cutoffs defined in terms of dB down from the maximum amplitude.  The
+upper corner definition is optional and defaults to 3 dB down.  This
+algorithm is designed to work with flat responses, i.e. a reponse in
+velocity for an instrument which is flat to velocity.  Other
+combinations will likely result in unsatisfactory results, i.e. a SAC
+PZ response in displacement for a sensor flat to velocity.
 
 .IP "-W"
 Prewhiten the time-series data before and dewhiten after any
