@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.137
+ * modified 2011.151
  ***************************************************************************/
 
 // Add stats output.
@@ -15,8 +15,6 @@
 // convert conversions from int to default to doubles
 
 // Add rotation code and options
-
-// Add envelope calculation
 
 // Perform polynomial response corrections
 
@@ -1324,8 +1322,8 @@ readSAC (char *sacfile, MSTraceList *mstl)
   
   if ( verbose >= 1 )
     {
-      fprintf (stderr, "[%s] %d samps @ %.6f Hz for N: '%s', S: '%s', L: '%s', C: '%s'\n",
-	       sacfile, msr->numsamples, msr->samprate,
+      fprintf (stderr, "[%s] %lld samps @ %.6f Hz for N: '%s', S: '%s', L: '%s', C: '%s'\n",
+	       sacfile, (long long int)msr->numsamples, msr->samprate,
 	       msr->network, msr->station,  msr->location, msr->channel);
     }
   
@@ -1810,7 +1808,7 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
   struct blkt_100_s Blkt100;
   char outfile[1024];
   FILE *ofp = 0;
-  int packedsamples = 0;
+  int64_t packedsamples = 0;
   int packedrecords = 0;
   int idx;
   
@@ -2027,8 +2025,8 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
     }
   
   if ( verbose )
-    fprintf (stderr, "Packed %d samples into %d records\n",
-	     packedsamples, packedrecords);
+    fprintf (stderr, "Packed %lld samples into %d records\n",
+	     (long long int)packedsamples, packedrecords);
   
   /* Make sure everything is cleaned up */
   if ( msr )
@@ -2312,8 +2310,8 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
     free (fdata);
   
   if ( verbose )
-    fprintf (stderr, "Wrote %d samples to %s (%d bytes)\n",
-	     seg->numsamples, outfile, outputbytes);
+    fprintf (stderr, "Wrote %lld samples to %s (%d bytes)\n",
+	     (long long int)seg->numsamples, outfile, outputbytes);
   
   return seg->numsamples;
 }  /* End of writeSAC() */

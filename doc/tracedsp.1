@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2011/05/16
+.TH TRACEDSP 1 2011/05/31
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -219,6 +219,11 @@ filter orders can optionally be specified and default to 4.  The
 filter is applied in the forward and reverse directions to eliminate
 phase distortion.  The argument \fB-BP1\fP can be used to request a
 single pass filter, phase distortion might be present.
+
+.IP "\fBFILTER OPERATIONS RETAIN DC OFFSET \fP"
+The \fB-LP\fP, \fB-HP\fP and \fB-BP\fP filtering operations retain the
+original DC offset by removing the mean value prior to filtering and
+restoring the mean value after the filter operation is complete.
 
 .IP "-D2"
 Perform a 2-point, uncentered differentiation on the time-series.

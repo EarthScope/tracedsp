@@ -12,7 +12,7 @@
  * modified after that.
  *
  * Chad Trabant - IRIS Data Management Center
- * modified: 2011.024
+ * modified: 2011.151
  **********************************************************************/
 
 #include <stdio.h>
@@ -48,6 +48,10 @@ void highpass (double fc, double dt, int n, iircomplex *p, double *b);
  * from high and low filter orders and cutoff frequencies.  Either the 
  * high or low order filter is optional or both may be used for a bandpass
  * filter.
+ *
+ * To avoid end effects the mean is removed from the series prior to
+ * filtering, after the filter operation is complete the mean value is
+ * added back to each sample.
  *
  * The *output data array will be allocated if necessary and it is up
  * to the calling routine to free that memory.  If *output is non-zero
@@ -312,7 +316,7 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
 	      applyfilter (a1, a2, b1, b2, samplecnt, 1, doutput, doutput);
 	    }
 	  
-	  /* Compenstate for filter gain */
+	  /* Compensate for filter gain */
 	  for ( idx=0 ; idx < samplecnt ; idx++ )
 	    doutput[idx] = b0l * doutput[idx];
 	}
@@ -343,24 +347,25 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
     }
 
   /* Copy samples into output buffer rounding integer data types, no test for overflow */
+  /* Add mean back into sample values while copying */
   switch ( outputtype )
     {
     case 'i':
       for ( idx=0; idx < samplecnt; idx++ ) 
 	{
-	  *((int *)*output+idx) = (int) (*(doutput+idx) + 0.5);
+	  *((int *)*output+idx) = (int) (*(doutput+idx) + mean + 0.5);
 	}
       break;
     case 'f':
-      for ( idx=0; idx < samplecnt; idx++ ) 
+      for ( idx=0; idx < samplecnt; idx++ )
 	{
-	  *((float *)*output+idx) = (float) (*(doutput+idx));
+	  *((float *)*output+idx) = (float) (*(doutput+idx) + mean);
 	}
       break;
     case 'd':
       for ( idx=0; idx < samplecnt; idx++ ) 
 	{
-	  *((double *)*output+idx) = (double) (*(doutput+idx));
+	  *((double *)*output+idx) = (double) (*(doutput+idx) + mean);
 	}
       break;
     }
