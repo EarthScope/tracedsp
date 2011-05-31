@@ -1,5 +1,11 @@
+2011.151:
+	- Update libmseed to 2.6.1.
+	- Retain pre-filter series mean (DC offset) during filter operations
+	by removing it prior to filtering and restoring it after the filter
+	operation is complete.  Add note to man page describing this.
+
 2011.136:
-        - Change -T and -Ta to -FL and -FLa, to avoid confusion.
+	- Change -T and -Ta to -FL and -FLa, to avoid confusion.
 
 2011.055:
 	- Update libmseed to 2.6.
