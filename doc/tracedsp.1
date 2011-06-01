@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2011/05/31
+.TH TRACEDSP 1 2011/06/01
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -99,7 +99,7 @@ computer byte order.  This can be one of:
 .IP "-m \fImetafile\fP"
 Specify a file containing metadata such as scaling factor,
 coordinates, elevation, component orientation, etc.  For each
-time-series written any matching metadata will be added to the SAC
+time series written any matching metadata will be added to the SAC
 header.  see \fIMETADATA FILES\fP below.
 
 .IP "-msi       "
@@ -123,22 +123,22 @@ output file name(s).  This option controls which directories these
 file(s) will be written to.
 
 .IP "-CR \fIrespfile[:start:stop]\fP"
-Convolve the time-series with the response specified in the SEED RESP
+Convolve the time series with the response specified in the SEED RESP
 file.  Optionally the starting and ending stages can be limited by
 specifying them as \fIstart\fP and \fIstop\fP.
 
 .IP "-DR \fIrespfile[:start:stop]\fP"
 Deconvolve the response specified in the SEED RESP file from the
-time-series.  Optionally the starting and ending stages can be limited
+time series.  Optionally the starting and ending stages can be limited
 by specifying them as \fIstart\fP and \fIstop\fP.
 
 .IP "-CS \fIpzfile\fP"
-Convolve the time-series with the response specified in the SAC poles
+Convolve the time series with the response specified in the SAC poles
 and zeros file.
 
 .IP "-DS \fIpzfile\fP"
 Deconvolve the response specified in the SAC poles and zeros file from
-the time-series.
+the time series.
 
 .IP "\fBSPECIAL CASE\fP"
 When a deconvolution operation is directly followed by a convolution
@@ -162,7 +162,7 @@ combinations will likely result in unsatisfactory results, i.e. a SAC
 PZ response in displacement for a sensor flat to velocity.
 
 .IP "-W"
-Prewhiten the time-series data before and dewhiten after any
+Prewhiten the time series data before and dewhiten after any
 (de)convolution operations.  Whitening is performed in the time
 domain.
 
@@ -188,7 +188,7 @@ equivalent to the -use-estimated-delay evalresp option.
 Ignore the SEED naming parameters when (de)convolving with responses
 specified in SEED RESP format, i.e. use the first response found in
 the specified RESP file.  By default the network, station, location
-and channel of the time-series are matched with an appropriate
+and channel of the time series are matched with an appropriate
 response in the specified RESP file.
 
 .IP "-Ru \fIunits\fP"
@@ -197,7 +197,7 @@ SEED RESP (de)convolution operations.  By default the output units of
 the response will be the input units specified in the RESP.
 
 .IP "-LP \fIfrequency[/order]\fP"
-Low-pass filter the time-series using an IIR filter derived from a low
+Low-pass filter the time series using an IIR filter derived from a low
 pass cutoff in Hertz and a filter order.  The filter \fPorder\fP can
 optionally be specified and defaults to 4.  The filter is applied in
 the forward and reverse directions to eliminate phase distortion.  The
@@ -205,7 +205,7 @@ argument \fB-LP1\fP can be used to request a single pass filter, phase
 distortion might be present.
 
 .IP "-HP \fIfrequency[/order]\fP"
-High-pass filter the time-series using an IIR filter derived from a
+High-pass filter the time series using an IIR filter derived from a
 high pass cutoff in Hertz and a filter order.  The filter \fPorder\fP
 can optionally be specified and defaults to 4.  The filter is applied
 in the forward and reverse directions to eliminate phase distortion.
@@ -213,7 +213,7 @@ The argument \fB-HP1\fP can be used to request a single pass filter,
 phase distortion might be present.
 
 .IP "-BP \fIfrequency[/order]:frequency[/order]\fP"
-Band-pass filter the time-series using an IIR filter derived from low
+Band-pass filter the time series using an IIR filter derived from low
 and high pass cutoff frequencies in Hertz and filter orders.  The
 filter orders can optionally be specified and default to 4.  The
 filter is applied in the forward and reverse directions to eliminate
@@ -226,34 +226,34 @@ original DC offset by removing the mean value prior to filtering and
 restoring the mean value after the filter operation is complete.
 
 .IP "-D2"
-Perform a 2-point, uncentered differentiation on the time-series.
+Perform a 2-point, uncentered differentiation on the time series.
 This results in one less sample and a time-shift of 1/2 sample period.
 
 .IP "-IT"
-Perform integration the time-series using the trapezoidal (midpoint)
+Perform integration the time series using the trapezoidal (midpoint)
 method.  This results in one less sample and a time-shift of 1/2
 sample period.
 
 .IP "-RM"
-Remove the mean from the time-series.
+Remove the mean from the time series.
 
 .IP "-SC \fIfactor\fP"
-Scale the time-series by \fIfactor\fP, i.e. multiple each data sample
+Scale the time series by \fIfactor\fP, i.e. multiple each data sample
 by \fIfactor\fP.
 
 .IP "-SI \fIfactor\fP"
-Scale the time-series by the inverse of \fIfactor\fP, i.e. divide each
+Scale the time series by the inverse of \fIfactor\fP, i.e. divide each
 data sample by \fIfactor\fP.
 
 .IP "-DEC \fIfactor\fP"
-Decimate the time-series by \fIfactor\fP and apply an anti-alias FIR
+Decimate the time series by \fIfactor\fP and apply an anti-alias FIR
 filter.  The decimation \fIfactor\fP must be between 2 and 7.  The
 hardcoded linear-phase anti-alias filters are the same default filters
 used by SAC and should not disrupt the phase characteristics of the
 signal.
 
 .IP "-TAP \fIwidth[:type]\fP"
-Apply symmetric taper of to the time-series.  The taper window
+Apply symmetric taper of to the time series.  The taper window
 \fIwidth\fP is specified as a percent of the trace length from 0 to
 0.5.  An optional window type may be specified, supported types are:
 
@@ -262,6 +262,11 @@ HANNING (default)
 HAMMING
 COSINE
 .fi
+
+.IP "-ENV"
+Calculate the envelope of the time series.  This calculation uses a
+Hilbert transform approximated by a time domain filter.
+
 
 .SH METADATA FILES
 A metadata file contains a list of station parameters, some of which
@@ -304,7 +309,7 @@ As a special case '--' can be used to match a blank (space, space)
 location code.
 .fi
 
-For each time-series written, metadata from the first line with
+For each time series written, metadata from the first line with
 matching source name parameters (network, station, location and
 channel) and time window (if specified) will be inserted into the SAC
 header.  All parameters are optional except for the first four fields

@@ -5,6 +5,7 @@
 	operation is complete.  Add note to man page describing this.
 
 2011.136:
+	- Add -ENV option to calculate envelope using a Hilber transform.
 	- Change -T and -Ta to -FL and -FLa, to avoid confusion.
 
 2011.055:
