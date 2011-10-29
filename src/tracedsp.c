@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.151
+ * modified 2011.302
  ***************************************************************************/
 
 // Add stats output.
@@ -20,10 +20,7 @@
 
 // Add resampling process
 
-// Add trim/lop segment synchronization process
-
 // Add processing log, a summary line for each operation
-
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,7 +85,7 @@ struct proclink {
 #define PROC_DECIMATE    14
 #define PROC_TAPER       15
 #define PROC_ENVELOPE    16
-#define PROC_DATASYNC    17
+#define PROC_DATATRIM    17
 
 
 /* Default order of high/low pass filter */
@@ -120,7 +117,7 @@ static int procScale (MSTraceSeg *seg, struct proclink *plp);
 static int procDecimate (MSTraceSeg *seg, struct proclink *plp);
 static int procTaper (MSTraceSeg *seg, struct proclink *plp);
 static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
-static int procDataSync (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
+static int procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
 
 static int64_t readMSEED (char *mseedfile, MSTraceList *mstl);
 static int64_t readSAC (char *sacfile, MSTraceList *mstl);
@@ -289,7 +286,7 @@ main (int argc, char **argv)
       if ( lateststart == HPTERROR || lateststart < id->earliest )
 	lateststart = id->earliest;
       
-      if ( earliestend == HPTERRPR || earliestend > id->latest )
+      if ( earliestend == HPTERROR || earliestend > id->latest )
 	earliestend = id->latest;
       
       id = id->next;
@@ -396,9 +393,9 @@ main (int argc, char **argv)
 		      break;
 		    }
 		}
-	      else if ( plp->type == PROC_DATASYNC )
+	      else if ( plp->type == PROC_DATATRIM )
 		{
-		  if ( procDataSync (seg, lateststart, earliestend) )
+		  if ( procDataTrim (seg, lateststart, earliestend) )
 		    {
 		      fprintf (stderr, "Error synchronizing time series windows %s\n",
 			       srcname);
@@ -1188,27 +1185,30 @@ procEnvelope (MSTraceSeg *seg, struct proclink *plp)
 
 
 /***************************************************************************
- * procDataSync:
+ * procDataTrim:
  *
- * Synchronize data start and end times by trimming start times for eah 
+ * Synchronize data start and end times by:
+ *  1) trimming start times for each segement to the latest start time
+ *  2) trimming end times for each segement to the earliest end time
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procDataSync (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
+procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
 {
   int retval;
   int64_t idx;
   int64_t trimcount;
-  int sampelsize;
+  int samplesize;
+  void *datasamples;
   
-  if ( ! seg || ! plp )
+  if ( ! seg )
     return -1;
 
   if ( lateststart == HPTERROR || earliestend == HPTERROR )
     return -1;
   
-  /* Skip segments that do not have integer or float sample types */
+  /* Skip segments that do not have integer, float and double types */
   if ( seg->sampletype != 'i' && seg->sampletype != 'f' && seg->sampletype != 'd' )
     return 0;
   
@@ -1219,36 +1219,60 @@ procDataSync (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
     {
       trimcount = (int64_t) ((double) MS_HPTIME2EPOCH((lateststart - seg->starttime)) * seg->samprate + 0.5);
       
-      if ( verbose > 1 )
+      if ( trimcount > 0 && trimcount < seg->numsamples )
 	{
-	  fprintf (stderr, "Trimming %lld samples from beginning of trace\n",
-		   (long long) trimcount);
+	  if ( verbose > 1 )
+	    fprintf (stderr, "Trimming %lld samples from beginning of trace\n", (long long)trimcount);
+	  
+	  memmove (seg->datasamples, seg->datasamples + (trimcount * samplesize), (trimcount * samplesize));
+	  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
+	  
+	  if ( ! datasamples )
+	    {
+	      fprintf (stderr, "procDataTrim(): Error reallocating sample buffer\n");
+	      return -1;
+	    }
+	  
+	  seg->datasamples = datasamples;
+	  seg->starttime = seg->starttime + MS_EPOCH2HPTIME((trimcount / seg->samprate));
+	  seg->numsamples -= trimcount;
+	  seg->samplecnt -= trimcount;
 	}
-      
-      //CHAD memmove samples and realloc buffer
-      
-      seg->starttime = seg->starttime - (trimcount / seg->samprate);
-      seg->samplecnt -= trimcount;
     }
   
   /* Trim samples from end of segment if later than earliest */
   if ( seg->endtime > earliestend )
     {
-      if ( verbose )
+      trimcount = (int64_t) ((double) MS_HPTIME2EPOCH((seg->endtime - earliestend)) * seg->samprate + 0.5);
+      
+      if ( trimcount > 0 && trimcount < seg->numsamples )
 	{
-	  fprintf (stderr, "Trimming %d samples from end of trace\n", trimcount);
+	  if ( verbose > 1 )
+	    fprintf (stderr, "Trimming %lld samples from end of trace\n", (long long)trimcount);
+	  
+	  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
+	  
+	  if ( ! datasamples )
+	    {
+	      fprintf (stderr, "procDataTrim(): Error reallocating sample buffer\n");
+	      return -1;
+	    }
+	  
+	  seg->datasamples = datasamples;
+	  seg->endtime = seg->endtime - MS_EPOCH2HPTIME((trimcount / seg->samprate));
+	  seg->numsamples -= trimcount;
+	  seg->samplecnt -= trimcount;
 	}
-
     }
-    
+  
   if ( retval < 0 )
     {
-      fprintf (stderr, "procDataSync(): Error caluclating envelope of time series\n");
-      return -1;      
+      fprintf (stderr, "procDataTrim(): Error caluclating envelope of time series\n");
+      return -1;
     }
   
   return 0;
-}  /* End of procDataSync() */
+}  /* End of procDataTrim() */
 
 
 /***************************************************************************
@@ -3109,9 +3133,9 @@ parameterProc (int argcount, char **argvec)
         {
 	  addProcess (PROC_ENVELOPE, NULL, NULL, 0, 0, 0.0, 0.0);
         }
-      else if (strcmp (argvec[optind], "-DSYNC") == 0)
+      else if (strcmp (argvec[optind], "-DTRIM") == 0)
         {
-	  addProcess (PROC_DATASYNC, NULL, NULL, 0, 0, 0.0, 0.0);
+	  addProcess (PROC_DATATRIM, NULL, NULL, 0, 0, 0.0, 0.0);
         }
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
@@ -3992,7 +4016,7 @@ usage (void)
 	   " -DEC factor   Decimate time series by specified factor\n"
 	   " -TAP width[:type]  Apply symmetric taper to time series\n"
 	   " -ENV          Calculate envelope of time series\n"
-	   " -DSYNC        Trim time series to latest start and earliest end\n"
+	   " -DTRIM        Trim time series to latest start and earliest end\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
 	   "\n");
