@@ -11,8 +11,11 @@
 
 // Add stats output.
 
-// check if doubles can be used throughout convolution code
-// convert conversions from int to default to doubles
+// check if doubles can be used throughout convolution code, convert to save memory?
+
+// convert conversions from int to default to doubles ??
+// uses more memory, but is an inconsistent conversion leading to inefficient memory use depending on combination of Ops
+
 
 // Add rotation code and options
 
@@ -521,7 +524,8 @@ procFilter (MSTraceSeg *seg, struct proclink *plp)
  * Convolve or deconvolve supplied response(s) from signal.  The
  * convolution routines require floats so this routine will always
  * convert the supplied data to floats and return the results as
- * floats.
+ * floats.  The (de)convolution calculations themselves are performed
+ * using doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
@@ -716,7 +720,8 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 /***************************************************************************
  * procDiff2:
  * 
- * Prepare for an uncentered, 2-point differentiation.
+ * Prepare for an uncentered, 2-point differentiation.  Integer
+ * samples will be converted to floats.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
@@ -772,6 +777,7 @@ procDiff2 (MSTraceSeg *seg, struct proclink *plp)
  * procIntTrap:
  * 
  * Prepare for integration using the trapezoidal (midpoint) method.
+ * Integer samples will be converted to floats.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
@@ -1121,7 +1127,8 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
 /***************************************************************************
  * procEnvelope:
  *
- * Calculates envelope of time series data.
+ * Calculates envelope of time series data.  Integer and float samples
+ * will be converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
