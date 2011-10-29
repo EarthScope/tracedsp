@@ -1,5 +1,5 @@
 /***************************************************************************
- * tracedsp.c - time-series processor for Mini-SEED and SAC data
+ * tracedsp.c - time series processor for Mini-SEED and SAC data
  *
  * Opens user specified files, parses the input data, applys
  * processing steps to the timeseries and writes the data.
@@ -88,6 +88,7 @@ struct proclink {
 #define PROC_DECIMATE    14
 #define PROC_TAPER       15
 #define PROC_ENVELOPE    16
+#define PROC_DATASYNC    17
 
 
 /* Default order of high/low pass filter */
@@ -119,6 +120,7 @@ static int procScale (MSTraceSeg *seg, struct proclink *plp);
 static int procDecimate (MSTraceSeg *seg, struct proclink *plp);
 static int procTaper (MSTraceSeg *seg, struct proclink *plp);
 static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
+static int procDataSync (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
 
 static int64_t readMSEED (char *mseedfile, MSTraceList *mstl);
 static int64_t readSAC (char *sacfile, MSTraceList *mstl);
@@ -210,6 +212,8 @@ main (int argc, char **argv)
   int64_t totalsamps = 0;
   int64_t sampsread;
   int totalfiles = 0;
+  hptime_t lateststart = HPTERROR;
+  hptime_t earliestend = HPTERROR;
   
   /* Process given parameters (command line and parameter file) */
   if ( parameterProc (argc, argv) < 0 )
@@ -278,6 +282,19 @@ main (int argc, char **argv)
   if ( basicsum )
     printf ("Input Files: %d, Samples: %lld\n", totalfiles, (long long int) totalsamps);
   
+  /* Determine latest start and earliest end times across all channels */
+  id = mstl->traces;
+  while ( id )
+    {
+      if ( lateststart == HPTERROR || lateststart < id->earliest )
+	lateststart = id->earliest;
+      
+      if ( earliestend == HPTERRPR || earliestend > id->latest )
+	earliestend = id->latest;
+      
+      id = id->next;
+    }
+  
   /* Loop through all read MSTraceIDs, apply processing and write resulting data */
   id = mstl->traces;
   while ( id )
@@ -313,7 +330,7 @@ main (int argc, char **argv)
 		{
 		  if ( procDiff2 (seg, plp) )
 		    {
-		      fprintf (stderr, "Error differentiating time-series for %s\n",
+		      fprintf (stderr, "Error differentiating time series for %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -323,7 +340,7 @@ main (int argc, char **argv)
 		{
 		  if ( procIntTrap (seg, plp) )
 		    {
-		      fprintf (stderr, "Error integrating time-series for %s\n",
+		      fprintf (stderr, "Error integrating time series for %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -333,7 +350,7 @@ main (int argc, char **argv)
 		{
 		  if ( procRMean (seg, plp) )
 		    {
-		      fprintf (stderr, "Error removing mean from time-series %s\n",
+		      fprintf (stderr, "Error removing mean from time series %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -343,7 +360,7 @@ main (int argc, char **argv)
 		{
 		  if ( procScale (seg, plp) )
 		    {
-		      fprintf (stderr, "Error scaling values of time-series %s\n",
+		      fprintf (stderr, "Error scaling values of time series %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -353,7 +370,7 @@ main (int argc, char **argv)
 		{
 		  if ( procDecimate (seg, plp) )
 		    {
-		      fprintf (stderr, "Error decimating time-series %s\n",
+		      fprintf (stderr, "Error decimating time series %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -363,7 +380,7 @@ main (int argc, char **argv)
 		{
 		  if ( procTaper (seg, plp) )
 		    {
-		      fprintf (stderr, "Error tapering time-series %s\n",
+		      fprintf (stderr, "Error tapering time series %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -373,7 +390,17 @@ main (int argc, char **argv)
 		{
 		  if ( procEnvelope (seg, plp) )
 		    {
-		      fprintf (stderr, "Error calculating envelope of time-series %s\n",
+		      fprintf (stderr, "Error calculating envelope of time series %s\n",
+			       srcname);
+		      errflag = -1;
+		      break;
+		    }
+		}
+	      else if ( plp->type == PROC_DATASYNC )
+		{
+		  if ( procDataSync (seg, lateststart, earliestend) )
+		    {
+		      fprintf (stderr, "Error synchronizing time series windows %s\n",
 			       srcname);
 		      errflag = -1;
 		      break;
@@ -725,7 +752,7 @@ procDiff2 (MSTraceSeg *seg, struct proclink *plp)
   
   /* Perform differentiation */
   if ( verbose )
-    fprintf (stderr, "Differentiating (%c) time-series\n", seg->sampletype);
+    fprintf (stderr, "Differentiating (%c) time series\n", seg->sampletype);
   
   count = differentiate2 (seg->datasamples, seg->sampletype, seg->numsamples,
 			  seg->samprate, seg->datasamples);
@@ -780,7 +807,7 @@ procIntTrap (MSTraceSeg *seg, struct proclink *plp)
   
   /* Perform integration */
   if ( verbose )
-    fprintf (stderr, "Integrating (%c) time-series\n", seg->sampletype);
+    fprintf (stderr, "Integrating (%c) time series\n", seg->sampletype);
   
   count = integrateTrap (seg->datasamples, seg->sampletype, seg->numsamples,
 			 (0.5/seg->samprate), seg->datasamples);
@@ -802,7 +829,7 @@ procIntTrap (MSTraceSeg *seg, struct proclink *plp)
 /***************************************************************************
  * procRMean:
  * 
- * Removes the mean from a time-series.  Integer samples will be
+ * Removes the mean from a time series.  Integer samples will be
  * converted to floats.
  *
  * Returns 0 on success and non-zero on error.
@@ -846,7 +873,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 	}
       
       if ( verbose )
-	fprintf (stderr, "Removing mean of %g from time-series\n", Mean);
+	fprintf (stderr, "Removing mean of %g from time series\n", Mean);
       
       /* Remove mean */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -865,7 +892,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 	}
       
       if ( verbose )
-	fprintf (stderr, "Removing mean of %g from time-series\n", Mean);
+	fprintf (stderr, "Removing mean of %g from time series\n", Mean);
       
       /* Remove mean */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -881,7 +908,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 /***************************************************************************
  * procScale:
  *
- * Scales all data samples in a time-series.  Integer samples will be
+ * Scales all data samples in a time series.  Integer samples will be
  * converted to floats.
  *
  * Returns 0 on success and non-zero on error.
@@ -916,7 +943,7 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
   if ( seg->sampletype == 'f' )
     {
       if ( verbose )
-	fprintf (stderr, "Scaling time-series by %g\n", plp->scalefactor);
+	fprintf (stderr, "Scaling time series by %g\n", plp->scalefactor);
       
       /* Scale samples */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -927,7 +954,7 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
   else if ( seg->sampletype == 'd' )
     {
       if ( verbose )
-	fprintf (stderr, "Scaling time-series by %g\n", plp->scalefactor);
+	fprintf (stderr, "Scaling time series by %g\n", plp->scalefactor);
       
       /* Scale samples */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -943,7 +970,7 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
 /***************************************************************************
  * procDecimate:
  *
- * Decimates the time-series by a given factor.  Integer and float
+ * Decimates the time series by a given factor.  Integer and float
  * samples will be converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
@@ -984,7 +1011,7 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
     }
   
   if ( verbose )
-    fprintf (stderr, "Decimating time-series by a factor of %d (%g -> %g sps)\n",
+    fprintf (stderr, "Decimating time series by a factor of %d (%g -> %g sps)\n",
 	     plp->decimfactor, seg->samprate, seg->samprate/plp->decimfactor);
   
   /* Perform the decimation and filtering */
@@ -1007,7 +1034,7 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
     }
   else
     {
-      fprintf (stderr, "procDecimate(): Error decimating time-series\n");
+      fprintf (stderr, "procDecimate(): Error decimating time series\n");
       return -1;      
     }
   
@@ -1018,7 +1045,7 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
 /***************************************************************************
  * procTaper:
  *
- * Tapers the time-series using a specified type and width.  Integer
+ * Tapers the time series using a specified type and width.  Integer
  * and float samples will be converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
@@ -1074,7 +1101,7 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
 	case TAPER_COSINE: typestr = "Cosine"; break;
 	}
       
-      fprintf (stderr, "Tapering time-series using width %g (%s)\n",
+      fprintf (stderr, "Tapering time series using width %g (%s)\n",
 	       plp->taperwidth, typestr);
     }
   
@@ -1083,7 +1110,7 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
   
   if ( retval < 0 )
     {
-      fprintf (stderr, "procTaper(): Error tapering time-series\n");
+      fprintf (stderr, "procTaper(): Error tapering time series\n");
       return -1;      
     }
   
@@ -1144,7 +1171,7 @@ procEnvelope (MSTraceSeg *seg, struct proclink *plp)
   
   if ( verbose )
     {
-      fprintf (stderr, "Calculating envelope of time-series\n");
+      fprintf (stderr, "Calculating envelope of time series\n");
     }
   
   /* Calculate envelope */
@@ -1152,12 +1179,76 @@ procEnvelope (MSTraceSeg *seg, struct proclink *plp)
   
   if ( retval < 0 )
     {
-      fprintf (stderr, "procEnvelope(): Error caluclating envelope of time-series\n");
+      fprintf (stderr, "procEnvelope(): Error caluclating envelope of time series\n");
       return -1;      
     }
   
   return 0;
 }  /* End of procEnvelope() */
+
+
+/***************************************************************************
+ * procDataSync:
+ *
+ * Synchronize data start and end times by trimming start times for eah 
+ *
+ * Returns 0 on success and non-zero on error.
+ ***************************************************************************/
+static int
+procDataSync (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
+{
+  int retval;
+  int64_t idx;
+  int64_t trimcount;
+  int sampelsize;
+  
+  if ( ! seg || ! plp )
+    return -1;
+
+  if ( lateststart == HPTERROR || earliestend == HPTERROR )
+    return -1;
+  
+  /* Skip segments that do not have integer or float sample types */
+  if ( seg->sampletype != 'i' && seg->sampletype != 'f' && seg->sampletype != 'd' )
+    return 0;
+  
+  samplesize = ms_samplesize (seg->sampletype);
+  
+  /* Trim samples from beginning of segment if earlier than latest */
+  if ( seg->starttime < lateststart )
+    {
+      trimcount = (int64_t) ((double) MS_HPTIME2EPOCH((lateststart - seg->starttime)) * seg->samprate + 0.5);
+      
+      if ( verbose > 1 )
+	{
+	  fprintf (stderr, "Trimming %lld samples from beginning of trace\n",
+		   (long long) trimcount);
+	}
+      
+      //CHAD memmove samples and realloc buffer
+      
+      seg->starttime = seg->starttime - (trimcount / seg->samprate);
+      seg->samplecnt -= trimcount;
+    }
+  
+  /* Trim samples from end of segment if later than earliest */
+  if ( seg->endtime > earliestend )
+    {
+      if ( verbose )
+	{
+	  fprintf (stderr, "Trimming %d samples from end of trace\n", trimcount);
+	}
+
+    }
+    
+  if ( retval < 0 )
+    {
+      fprintf (stderr, "procDataSync(): Error caluclating envelope of time series\n");
+      return -1;      
+    }
+  
+  return 0;
+}  /* End of procDataSync() */
 
 
 /***************************************************************************
@@ -1190,7 +1281,7 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
   /* Loop over the input file reading records */
   while ( (retcode = ms_readmsr (&msr, mseedfile, reclen, NULL, NULL, 1, 1, verbose-3)) == MS_NOERROR )
     {
-      /* Skip data records that do not contain time-series data */
+      /* Skip data records that do not contain time series data */
       if ( msr->numsamples == 0 || (msr->sampletype != 'i' && msr->sampletype != 'f' && msr->sampletype != 'd') )
 	{
 	  if ( verbose >= 3 )
@@ -1198,7 +1289,7 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
 	      char stime[100];
 	      msr_srcname (msr, srcname, 1);
 	      ms_hptime2seedtimestr (msr->starttime, stime, 1);
-	      fprintf (stderr, "Skipping (no time-series data) %s, %s\n", srcname, stime);
+	      fprintf (stderr, "Skipping (no time series data) %s, %s\n", srcname, stime);
 	    }
 	  continue;
 	}
@@ -2128,7 +2219,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
       sh.e = sh.b + (seg->numsamples - 1) * (1 / seg->samprate);
     }
   
-  /* Set time-series source parameters */
+  /* Set time series source parameters */
   if ( *id->network != '\0' )
     strncpy (sh.knetwk, id->network, 8);
   if ( *id->station != '\0' )
@@ -2141,7 +2232,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
   /* Set misc. header variables */
   sh.nvhdr = 6;                 /* Header version = 6 */
   sh.leven = 1;                 /* Evenly spaced data */
-  sh.iftype = ITIME;            /* Data is time-series */
+  sh.iftype = ITIME;            /* Data is time series */
   
   /* Insert metadata if present */
   if ( metadata )
@@ -3018,6 +3109,10 @@ parameterProc (int argcount, char **argvec)
         {
 	  addProcess (PROC_ENVELOPE, NULL, NULL, 0, 0, 0.0, 0.0);
         }
+      else if (strcmp (argvec[optind], "-DSYNC") == 0)
+        {
+	  addProcess (PROC_DATASYNC, NULL, NULL, 0, 0, 0.0, 0.0);
+        }
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
 	{
@@ -3836,7 +3931,7 @@ recordHandler (char *record, int reclen, void *vofp)
 static void
 usage (void)
 {
-  fprintf (stderr, "%s - time-series signal processor: %s\n\n", PACKAGE, VERSION);
+  fprintf (stderr, "%s - time series signal processor: %s\n\n", PACKAGE, VERSION);
   fprintf (stderr, "Usage: %s [options] file1 [file2] [file3] ...\n\n", PACKAGE);
   fprintf (stderr,
 	   " ## Input/Output Options ##\n"
@@ -3891,12 +3986,13 @@ usage (void)
 	   " ## Other Processing Options ##\n"
 	   " -D2           Differentiate using 2 point (uncentered) method\n"
 	   " -IT           Integrate using trapezoidal (midpoint) method\n"
-	   " -RM           Remove mean from time-series\n"
+	   " -RM           Remove mean from time series\n"
 	   " -SC factor    Scale the data samples by a specified factor\n"
 	   " -SI factor    Scale the data samples by inverse of specified factor\n"
 	   " -DEC factor   Decimate time series by specified factor\n"
 	   " -TAP width[:type]  Apply symmetric taper to time series\n"
 	   " -ENV          Calculate envelope of time series\n"
+	   " -DSYNC        Trim time series to latest start and earliest end\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
 	   "\n");
