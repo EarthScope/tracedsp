@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.302
+ * modified 2011.311
  ***************************************************************************/
 
 // Add stats output.
@@ -16,7 +16,6 @@
 // convert conversions from int to default to doubles ??
 // uses more memory, but is an inconsistent conversion leading to inefficient memory use depending on combination of Ops
 
-
 // Add rotation code and options
 
 // Perform polynomial response corrections
@@ -24,6 +23,7 @@
 // Add resampling process
 
 // Add processing log, a summary line for each operation
+CHAD: trigger on if ( proclogfile ) and then addtoplog ("log message"), with no end line
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +91,9 @@ struct proclink {
 #define PROC_DATATRIM    17
 
 
+/* Maximum processing log size in bytes, 10 MB */
+#define MAXPROCLOG 10485760
+
 /* Default order of high/low pass filter */
 #define DEFAULT_FILTER_ORDER 4
 
@@ -140,6 +143,9 @@ static int writeAlphaSAC (struct SACHeader *sh, float *fdata, int npts, char *ou
 static int insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime);
 static int swapSACHeader (struct SACHeader *sh);
 
+static int addtostring (char **string, char *add, char* delim, int where, int maxlen);
+static int addtoplog (char *message);
+
 static int differentiate2 (void *input, char inputtype, int length,
 			   double rate, void *output);
 static int integrateTrap (void *input, char inputtype, int length,
@@ -173,6 +179,8 @@ static flag    sacoutformat  = 2;    /* 1=alpha, 2=binary (host), 3=binary (LE),
 static char   *sacnet        = 0;    /* SAC network code override */
 static char   *sacloc        = 0;    /* SAC location ID override */
 static char   *metadatafile  = 0;    /* File containing metadata for output (SAC, etc.) */
+static char   *proclog       = 0;    /* Detailed processing log as a string */
+static char   *proclogfile   = 0;    /* Detailed processing log file */
 static int     prewhiten     = 0;    /* Prewhitening for [de]convolution, predictor order */
 static double *freqlimit     = 0;    /* Frequency limits for deconvolution */
 static double  lcdBdown      = -1.0; /* Lower corner dB down cutoff */
@@ -207,7 +215,6 @@ main (int argc, char **argv)
   MSTraceList *mstl = NULL;
   MSTraceID *id = NULL;
   MSTraceSeg *seg = NULL;
-  char srcname[100];
   int errflag = 0;
   int64_t totalsamps = 0;
   int64_t sampsread;
@@ -310,7 +317,7 @@ main (int argc, char **argv)
 		{
 		  if ( procFilter (seg, plp) )
 		    {
-		      fprintf (stderr, "Error applying filter for %s\n", srcname);
+		      fprintf (stderr, "Error applying filter for %s\n", id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -321,7 +328,7 @@ main (int argc, char **argv)
 		    {
 		      fprintf (stderr, "Error (de)convolving response (%s - %s) from %s\n",
 			       (plp->filename[0])?plp->filename[0]:"None",
-			       (plp->filename[1])?plp->filename[1]:"None", srcname);
+			       (plp->filename[1])?plp->filename[1]:"None", id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -331,7 +338,7 @@ main (int argc, char **argv)
 		  if ( procDiff2 (seg, plp) )
 		    {
 		      fprintf (stderr, "Error differentiating time series for %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -341,7 +348,7 @@ main (int argc, char **argv)
 		  if ( procIntTrap (seg, plp) )
 		    {
 		      fprintf (stderr, "Error integrating time series for %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -351,7 +358,7 @@ main (int argc, char **argv)
 		  if ( procRMean (seg, plp) )
 		    {
 		      fprintf (stderr, "Error removing mean from time series %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -361,7 +368,7 @@ main (int argc, char **argv)
 		  if ( procScale (seg, plp) )
 		    {
 		      fprintf (stderr, "Error scaling values of time series %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -371,7 +378,7 @@ main (int argc, char **argv)
 		  if ( procDecimate (seg, plp) )
 		    {
 		      fprintf (stderr, "Error decimating time series %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -381,7 +388,7 @@ main (int argc, char **argv)
 		  if ( procTaper (seg, plp) )
 		    {
 		      fprintf (stderr, "Error tapering time series %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -391,7 +398,7 @@ main (int argc, char **argv)
 		  if ( procEnvelope (seg, plp) )
 		    {
 		      fprintf (stderr, "Error calculating envelope of time series %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -401,7 +408,7 @@ main (int argc, char **argv)
 		  if ( procDataTrim (seg, lateststart, earliestend) )
 		    {
 		      fprintf (stderr, "Error synchronizing time series windows %s\n",
-			       srcname);
+			       id->srcname);
 		      errflag = -1;
 		      break;
 		    }
@@ -1203,8 +1210,6 @@ procEnvelope (MSTraceSeg *seg, struct proclink *plp)
 static int
 procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
 {
-  int retval;
-  int64_t idx;
   int64_t trimcount;
   int samplesize;
   void *datasamples;
@@ -1215,7 +1220,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
   if ( lateststart == HPTERROR || earliestend == HPTERROR )
     return -1;
   
-  /* Skip segments that do not have integer, float and double types */
+  /* Skip segments that do not have integer, float or double types */
   if ( seg->sampletype != 'i' && seg->sampletype != 'f' && seg->sampletype != 'd' )
     return 0;
   
@@ -1270,12 +1275,6 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
 	  seg->numsamples -= trimcount;
 	  seg->samplecnt -= trimcount;
 	}
-    }
-  
-  if ( retval < 0 )
-    {
-      fprintf (stderr, "procDataTrim(): Error caluclating envelope of time series\n");
-      return -1;
     }
   
   return 0;
@@ -2163,7 +2162,7 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
     fclose (ofp);
   
   return packedsamples;
-}  /* End of writeMSEED) */
+}  /* End of writeMSEED() */
 
 
 /***************************************************************************
@@ -2723,6 +2722,100 @@ swapSACHeader (struct SACHeader *sh)
 
 
 /***************************************************************************
+ * addtostring:
+ *
+ * Concatinate one string to another with a delimiter in-between
+ * growing the target string as needed up to a maximum length.  The
+ * new addition can be added to either the beggining or end of the
+ * string using the where flag:
+ *
+ * where == 0 means add new addition to end of string
+ * where != 0 means add new addition to beginning of string
+ * 
+ * Return 0 on success, -1 on memory allocation error and -2 when
+ * string would grow beyond maximum length.
+ ***************************************************************************/
+static int
+addtostring (char **string, char *add, char* delim, int where, int maxlen)
+{
+  int length;
+  char *ptr;
+  
+  if ( ! string || ! add )
+    return -1;
+  
+  /* If string is empty, allocate space and copy the addition */
+  if ( ! *string )
+    {
+      length = strlen (add) + 1;
+      
+      if ( length > maxlen )
+        return -2;
+      
+      if ( (*string = (char *) malloc (length)) == NULL )
+        return -1;
+      
+      strcpy (*string, add);
+    }
+  /* Otherwise add the addition with a delimiter */
+  else
+    {
+      length = strlen (*string) + strlen (delim) + strlen(add) + 1;
+      
+      if ( length > maxlen )
+        return -2;
+      
+      if ( (ptr = (char *) malloc (length)) == NULL )
+        return -1;
+      
+      /* Put addition at beginning of the string */
+      if ( where )
+        {
+          snprintf (ptr, length, "%s%s%s",
+                    (add) ? add : "",
+                    (delim) ? delim : "",
+                    *string);
+        }
+      /* Put addition at end of the string */
+      else
+        {
+          snprintf (ptr, length, "%s%s%s",
+                    *string,
+                    (delim) ? delim : "",
+                    (add) ? add : "");
+        }
+      
+      /* Free previous string and set pointer to newly allocated space */
+      free (*string);
+      *string = ptr;
+    }
+  
+  return 0;
+}  /* End of addtostring() */
+
+
+/***************************************************************************
+ * addtoplog:
+ *
+ * Add string to global process log (another string), using newline
+ * characters to delimit log entries.
+ *
+ * Return 0 on success, -1 on errors.
+ ***************************************************************************/
+static int
+addtoplog (char *message)
+{
+  if ( ! string )
+    return -1;
+  
+  if ( addtostring (&proclog, message, "\n", 0, MAXPROCLOG) )
+    return -1;
+
+  return 0;
+}  /* End of addtoplog() */
+
+
+/***************************************************************************
  * differentiate2:
  * 
  * Perform uncentered, two-point differentiation.  The output array
@@ -2962,6 +3055,10 @@ parameterProc (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-od") == 0)
         {
           outputdir = getOptVal(argcount, argvec, optind++, 0);
+        }
+      else if (strcmp (argvec[optind], "-plog") == 0)
+        {
+          proclogfile = getOptVal(argcount, argvec, optind++, 1);
         }
       else if (strcmp (argvec[optind], "-c") == 0)
         {
@@ -3987,8 +4084,9 @@ usage (void)
 	   " -m metafile   File containing station metadata for SAC output\n"
            " -msi          Convert component inclination/dip from SEED to SAC convention\n"
 	   " -c channel    Set channel/component name for processed output\n"
-	   " -o outfile    Specify output file instead of generating names\n"
+	   " -o outfile    Specify output file instead of generating file names\n"
 	   " -od outdir    Specify output directory for generated file names\n"
+	   " -plog file    Write detailed processing log to specified file\n"
 	   "\n"
 	   " ## Convolution Options ##\n"
 	   " -CR respfile[:#:#] Specify SEED RESP file/dir for convolution\n"
@@ -3997,7 +4095,7 @@ usage (void)
 	   " -DS pzfile    Specify poles and zeros file for deconvolution\n"
 	   " -FL freqs     Specify frequency limits for deconvolution operations\n"
 	   "                 Frequencies are specify as: 'f1/f2/f3/f4'\n"
-	   " -FLa dBdown   Automatically determine envelope for a frequency limits\n"
+	   " -FLa dBdown   Automatically determine frequency limits for specified dBdown\n"
 	   " -W            Use prewhitening and dewhitening for convolution operations\n"
 	   " -Wo order     Specify prediction filter order used for whitening, default: 6\n"
 	   " -Rts          Use the total sensitivity in SEED RESP files instead of gains\n"
