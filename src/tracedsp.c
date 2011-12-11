@@ -23,7 +23,7 @@
 // Add resampling process
 
 // Add processing log, a summary line for each operation
-CHAD: trigger on if ( proclogfile ) and then addtoplog ("log message"), with no end line
+CHAD: replace logging with addToProcLog()  with no end lines
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -143,8 +143,8 @@ static int writeAlphaSAC (struct SACHeader *sh, float *fdata, int npts, char *ou
 static int insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime);
 static int swapSACHeader (struct SACHeader *sh);
 
-static int addtostring (char **string, char *add, char* delim, int where, int maxlen);
-static int addtoplog (char *message);
+static int addToString (char **string, char *add, char* delim, int where, int maxlen);
+static int addToProcLog (const char *format, ...);
 
 static int differentiate2 (void *input, char inputtype, int length,
 			   double rate, void *output);
@@ -440,6 +440,29 @@ main (int argc, char **argv)
       id = id->next;
     }
   
+  /* Write process log to output file */
+  if ( proclog && proclogfile )
+    {
+      FILE *plf;
+      
+      if ( verbose )
+	fprintf (stderr, "Writing process log file\n");
+
+      if ( (plf = fopen (proclogfile, "wb")) == NULL )
+	{
+	  fprintf (stderr, "Error opening process log file: %s\n", strerror(errno));
+	}
+      else
+	{
+	  if ( fprintf (plf, "%s\n", proclog) < 0 )
+	    {
+	      fprintf (stderr, "Error writing process log file\n");
+	    }
+	  
+	  fclose (plf);
+	}
+    }
+  
   /* Make sure everything is cleaned up */
   mstl_free (&mstl, 1);
   
@@ -488,18 +511,15 @@ procFilter (MSTraceSeg *seg, struct proclink *plp)
   /* Filter trace */
   if ( plp->lporder || plp->hporder )
     {
-      if ( verbose )
-	{
-	  if ( plp->lporder && ! plp->hporder )
-	    fprintf (stderr, "Low-pass filter cutoff: %f, order: %d\n",
-		     plp->lpcutoff, plp->lporder);
-	  else if ( ! plp->lporder && plp->hporder )
-	    fprintf (stderr, "High-pass filter cutoff: %f, order: %d\n",
-		     plp->hpcutoff, plp->hporder);
-	  else
-	    fprintf (stderr, "Band-pass filter HP cutoff: %f, order: %d => LP cutoff: %f, order: %d\n",
-		     plp->lpcutoff, plp->lporder, plp->hpcutoff, plp->hporder);
-	}
+      if ( plp->lporder && ! plp->hporder )
+	addToProcLog ("Low-pass filter cutoff: %f, order: %d",
+		      plp->lpcutoff, plp->lporder);
+      else if ( ! plp->lporder && plp->hporder )
+	addToProcLog ("High-pass filter cutoff: %f, order: %d",
+		      plp->hpcutoff, plp->hporder);
+      else
+	addToProcLog ("Band-pass filter HP cutoff: %f, order: %d => LP cutoff: %f, order: %d",
+		      plp->lpcutoff, plp->lporder, plp->hpcutoff, plp->hporder);
       
       /* Apply the filter */
       if ( iirfilter (seg->datasamples, seg->sampletype, seg->numsamples, plp->reverseflag,
@@ -2722,7 +2742,7 @@ swapSACHeader (struct SACHeader *sh)
 
 
 /***************************************************************************
- * addtostring:
+ * addToString:
  *
  * Concatinate one string to another with a delimiter in-between
  * growing the target string as needed up to a maximum length.  The
@@ -2736,7 +2756,7 @@ swapSACHeader (struct SACHeader *sh)
  * string would grow beyond maximum length.
  ***************************************************************************/
 static int
-addtostring (char **string, char *add, char* delim, int where, int maxlen)
+addToString (char **string, char *add, char* delim, int where, int maxlen)
 {
   int length;
   char *ptr;
@@ -2791,28 +2811,40 @@ addtostring (char **string, char *add, char* delim, int where, int maxlen)
     }
   
   return 0;
-}  /* End of addtostring() */
+}  /* End of addToString() */
 
 
 /***************************************************************************
- * addtoplog:
+ * addToProcLog:
  *
- * Add string to global process log (another string), using newline
- * characters to delimit log entries.
+ * Format printf-style log message, print to stderr if verbose and add
+ * to global process log if requested.
  *
  * Return 0 on success, -1 on errors.
  ***************************************************************************/
 static int
-addtoplog (char *message)
+addToProcLog (const char *format, ...)
 {
-  if ( ! string )
+  static char message[1024];
+  va_list varlist;
+  
+  if ( ! format )
     return -1;
   
-  if ( addtostring (&proclog, message, "\n", 0, MAXPROCLOG) )
-    return -1;
-
+  va_start (varlist, format);
+  vsnprintf (message, sizeof(message), format, varlist);
+  va_end (varlist);
+  
+  if ( verbose )
+    fprintf (stderr, "%s\n", message);
+  
+  /* Add to stored process log buffer, delimit entries with newlines */
+  if ( proclogfile )
+    if ( addToString (&proclog, message, "\n", 0, MAXPROCLOG) )
+      return -1;
+  
   return 0;
-}  /* End of addtoplog() */
+}  /* End of addToProcLog() */
 
 
 /***************************************************************************
