@@ -22,9 +22,6 @@
 
 // Add resampling process
 
-// Add processing log, a summary line for each operation
-CHAD: replace logging with addToProcLog()  with no end lines
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -221,6 +218,8 @@ main (int argc, char **argv)
   int totalfiles = 0;
   hptime_t lateststart = HPTERROR;
   hptime_t earliestend = HPTERROR;
+  char stime[50];
+  char etime[50];
   
   /* Process given parameters (command line and parameter file) */
   if ( parameterProc (argc, argv) < 0 )
@@ -309,6 +308,10 @@ main (int argc, char **argv)
       seg = id->first;
       while ( seg )
 	{
+	  ms_hptime2seedtimestr (seg->starttime, stime, 1);
+	  ms_hptime2seedtimestr (seg->endtime, etime, 1);
+	  addToProcLog ("Processing %s (%s - %s)", id->srcname, stime, etime);
+	  
 	  /* Loop through process list */
 	  plp = proclist;
 	  while ( plp && ! errflag )
@@ -619,11 +622,6 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 	}
     }
   
-  if ( verbose >= 1 && plp->filetype[0] && plp->filetype[1] )
-    {
-      fprintf (stderr, "Deconvolution-convolution have been paired into a transfer operation\n");
-    }
-  
   /* Calculate common parameters */
   nfft = next2 (seg->numsamples);
   nfreqs = nfft/2 + 1;
@@ -638,15 +636,10 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
       /* Calculate response functions from SEED RESP */
       if ( plp->filetype[idx] == PROC_CONVRESP || plp->filetype[idx] == PROC_DECONVRESP )
 	{
-	  if ( verbose )
-	    {
-	      if ( plp->filetype[idx] == PROC_CONVRESP )
-		fprintf (stderr, "Convolving with SEED RESP response '%s'\n",
-			 plp->filename[idx]);
-	      else
-		fprintf (stderr, "Deconvolving SEED RESP response '%s'\n",
-			 plp->filename[idx]);
-	    }
+	  if ( plp->filetype[idx] == PROC_CONVRESP )
+	    addToProcLog ("Convolving with SEED RESP response '%s'", plp->filename[idx]);
+	  else
+	    addToProcLog ("Deconvolving SEED RESP response '%s'", plp->filename[idx]);
 	  
 	  if ( respusename )
 	    {
@@ -675,21 +668,16 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 	  else
 	    {
 	      dreal = xreal; xreal = NULL;
-	      dimag = ximag; ximag = NULL;	  
+	      dimag = ximag; ximag = NULL;
 	    }
 	}
       /* Calculate response functions from SAC P&Zs */
       else if ( plp->filetype[idx] == PROC_CONVSAC || plp->filetype[idx] == PROC_DECONVSAC )
 	{
-	  if ( verbose )
-	    {
-	      if ( plp->filetype[idx] == PROC_CONVSAC )
-		fprintf (stderr, "Convolving with SAC Poles & Zeros response '%s'\n",
-			 plp->filename[idx]);
-	      else
-		fprintf (stderr, "Deconvolving SAC Poles & Zeros response '%s'\n",
-			 plp->filename[idx]);
-	    }
+	  if ( plp->filetype[idx] == PROC_CONVSAC )
+	    addToProcLog ("Convolving with SAC Poles & Zeros response '%s'", plp->filename[idx]);
+	  else
+	    addToProcLog ("Deconvolving SAC Poles & Zeros response '%s'", plp->filename[idx]);
 	  
 	  retval = calcfr_sac (nfreqs, delfreq, plp->filename[idx],
 			       &xreal, &ximag , verbose);
@@ -708,22 +696,33 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 	}
     }
   
-  /* Check if frequency limit parameters need to be calculated for deconvolution */
-  if ( dreal && dimag && freqlimit &&
-       (freqlimit[0] == -1.0 || freqlimit[1] == -1.0 ||
-	freqlimit[2] == -1.0 || freqlimit[3] == -1.0) )
+  if ( plp->filetype[0] && plp->filetype[1] )
     {
-      /* Determine frequency limits for deconvolution response */
-      if ( findtaper (freqlimit, dreal, dimag, nfreqs, delfreq, lcdBdown, ucdBdown) )
+      addToProcLog ("Deconvolution-convolution operations combined into a single transfer operation");
+    }
+  
+  /* Check if frequency limit parameters need to be calculated for deconvolution */
+  if ( dreal && dimag && freqlimit )
+    {
+      if ( (freqlimit[0] == -1.0 || freqlimit[1] == -1.0 ||
+	    freqlimit[2] == -1.0 || freqlimit[3] == -1.0) )
 	{
-	  fprintf (stderr, "Error determing deconvolution frequency limit parameters\n");
-	  return -1;
+	  /* Determine frequency limits for deconvolution response */
+	  if ( findtaper (freqlimit, dreal, dimag, nfreqs, delfreq, lcdBdown, ucdBdown) )
+	    {
+	      fprintf (stderr, "Error determing deconvolution frequency limit parameters\n");
+	      return -1;
+	    }
 	}
       
-      if ( verbose )
-	fprintf (stderr, "Final frequency limits (Hz): %g/%g => %g/%g [cutoffs %g/%g]\n",
-		 freqlimit[0], freqlimit[1], freqlimit[2], freqlimit[3],
-		 lcdBdown, ucdBdown);
+      if ( plp->filetype[0] && plp->filetype[1] )
+	addToProcLog ("Transfer frequency limits (Hz): %g/%g => %g/%g [cutoffs %g/%g]",
+		      freqlimit[0], freqlimit[1], freqlimit[2], freqlimit[3],
+		      lcdBdown, ucdBdown);
+      else
+	addToProcLog ("Deconvolution frequency limits (Hz): %g/%g => %g/%g [cutoffs %g/%g]",
+		      freqlimit[0], freqlimit[1], freqlimit[2], freqlimit[3],
+		      lcdBdown, ucdBdown);
     }
   
   /* Perform convolution, deconvolution or both */
@@ -780,8 +779,7 @@ procDiff2 (MSTraceSeg *seg, struct proclink *plp)
     }
   
   /* Perform differentiation */
-  if ( verbose )
-    fprintf (stderr, "Differentiating (%c) time series\n", seg->sampletype);
+  addToProcLog ("Differentiating (%c) time series", seg->sampletype);
   
   count = differentiate2 (seg->datasamples, seg->sampletype, seg->numsamples,
 			  seg->samprate, seg->datasamples);
@@ -836,8 +834,7 @@ procIntTrap (MSTraceSeg *seg, struct proclink *plp)
     }
   
   /* Perform integration */
-  if ( verbose )
-    fprintf (stderr, "Integrating (%c) time series\n", seg->sampletype);
+  addToProcLog ("Integrating (%c) time series", seg->sampletype);
   
   count = integrateTrap (seg->datasamples, seg->sampletype, seg->numsamples,
 			 (0.5/seg->samprate), seg->datasamples);
@@ -902,8 +899,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 	  pM = Mean;
 	}
       
-      if ( verbose )
-	fprintf (stderr, "Removing mean of %g from time series\n", Mean);
+      addToProcLog ("Removing mean of %g from time series", Mean);
       
       /* Remove mean */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -921,8 +917,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 	  pM = Mean;
 	}
       
-      if ( verbose )
-	fprintf (stderr, "Removing mean of %g from time series\n", Mean);
+      addToProcLog ("Removing mean of %g from time series", Mean);
       
       /* Remove mean */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -972,8 +967,7 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
   /* Scale sample values */
   if ( seg->sampletype == 'f' )
     {
-      if ( verbose )
-	fprintf (stderr, "Scaling time series by %g\n", plp->scalefactor);
+      addToProcLog ("Scaling time series by %g", plp->scalefactor);
       
       /* Scale samples */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -983,8 +977,7 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
     }
   else if ( seg->sampletype == 'd' )
     {
-      if ( verbose )
-	fprintf (stderr, "Scaling time series by %g\n", plp->scalefactor);
+      addToProcLog ("Scaling time series by %g", plp->scalefactor);
       
       /* Scale samples */
       for (idx = 0; idx < seg->numsamples; idx++)
@@ -1040,9 +1033,8 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
       seg->sampletype = 'd';
     }
   
-  if ( verbose )
-    fprintf (stderr, "Decimating time series by a factor of %d (%g -> %g sps)\n",
-	     plp->decimfactor, seg->samprate, seg->samprate/plp->decimfactor);
+  addToProcLog ("Decimating time series by a factor of %d (%g -> %g sps)",
+		plp->decimfactor, seg->samprate, seg->samprate/plp->decimfactor);
   
   /* Perform the decimation and filtering */
   numsamples = decimate (seg->datasamples, seg->numsamples, plp->decimfactor, NULL, -1, -1);
@@ -1088,6 +1080,7 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
   int32_t *idata = seg->datasamples;
   float *fdata = seg->datasamples;
   double *ddata = seg->datasamples;
+  char *typestr = "";
   
   if ( ! seg || ! plp )
     return -1;
@@ -1121,31 +1114,24 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
       return -1;
     }
   
-  if ( verbose )
-    {
-      char *typestr = "";
-      switch ( plp->tapertype )
-	{
-	case TAPER_HANNING: typestr = "Hanning"; break;
-	case TAPER_HAMMING: typestr = "Hamming"; break;
-	case TAPER_COSINE: typestr = "Cosine"; break;
-	}
-      
-      fprintf (stderr, "Tapering time series using width %g (%s)\n",
-	       plp->taperwidth, typestr);
-    }
-  
   /* Perform the tapering */
   retval = taper (seg->datasamples, seg->numsamples, plp->taperwidth, plp->tapertype);
   
   if ( retval < 0 )
     {
       fprintf (stderr, "procTaper(): Error tapering time series\n");
-      return -1;      
+      return -1;
     }
   
-  if ( verbose )
-    fprintf (stderr, "Taper window length: %d samples\n", retval);
+  switch ( plp->tapertype )
+    {
+    case TAPER_HANNING: typestr = "Hanning"; break;
+    case TAPER_HAMMING: typestr = "Hamming"; break;
+    case TAPER_COSINE: typestr = "Cosine"; break;
+    }
+  
+  addToProcLog ("Tapering time series using width %g (%d samples) type: %s",
+		plp->taperwidth, retval, typestr);
   
   return 0;
 }  /* End of procTaper() */
@@ -1200,12 +1186,9 @@ procEnvelope (MSTraceSeg *seg, struct proclink *plp)
       return -1;
     }
   
-  if ( verbose )
-    {
-      fprintf (stderr, "Calculating envelope of time series\n");
-    }
+  addToProcLog ("Calculating envelope of time series");
   
-  /* Calculate envelope */
+  /* Calculate envelope, replacing original data array */
   retval = envelope (seg->datasamples, seg->numsamples);
   
   if ( retval < 0 )
@@ -1236,7 +1219,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
   
   if ( ! seg )
     return -1;
-
+  
   if ( lateststart == HPTERROR || earliestend == HPTERROR )
     return -1;
   
@@ -1253,8 +1236,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
       
       if ( trimcount > 0 && trimcount < seg->numsamples )
 	{
-	  if ( verbose > 1 )
-	    fprintf (stderr, "Trimming %lld samples from beginning of trace\n", (long long)trimcount);
+	  addToProcLog ("Trimming %lld samples from beginning of trace", (long long)trimcount);
 	  
 	  memmove (seg->datasamples, seg->datasamples + (trimcount * samplesize), (trimcount * samplesize));
 	  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
@@ -1279,8 +1261,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
       
       if ( trimcount > 0 && trimcount < seg->numsamples )
 	{
-	  if ( verbose > 1 )
-	    fprintf (stderr, "Trimming %lld samples from end of trace\n", (long long)trimcount);
+	  addToProcLog ("Trimming %lld samples from end of trace", (long long)trimcount);
 	  
 	  datasamples = realloc (seg->datasamples, (seg->numsamples - trimcount) * samplesize);
 	  
