@@ -308,9 +308,12 @@ main (int argc, char **argv)
       seg = id->first;
       while ( seg )
 	{
-	  ms_hptime2seedtimestr (seg->starttime, stime, 1);
-	  ms_hptime2seedtimestr (seg->endtime, etime, 1);
-	  addToProcLog ("Processing %s (%s - %s)", id->srcname, stime, etime);
+	  if ( proclist )
+	    {
+	      ms_hptime2seedtimestr (seg->starttime, stime, 1);
+	      ms_hptime2seedtimestr (seg->endtime, etime, 1);
+	      addToProcLog ("Processing %s (%s - %s)", id->srcname, stime, etime);
+	    }
 	  
 	  /* Loop through process list */
 	  plp = proclist;
