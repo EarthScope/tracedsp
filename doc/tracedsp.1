@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2011/06/01
+.TH TRACEDSP 1 2011/12/11
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -121,6 +121,10 @@ output the file will be overwritten.
 If no output file is explicitly specified the program will generate
 output file name(s).  This option controls which directories these
 file(s) will be written to.
+
+.IP "-plog \fIlogfile\fP"
+Write log entries detailing the processing applied to each segment to
+the specified file.
 
 .IP "-CR \fIrespfile[:start:stop]\fP"
 Convolve the time series with the response specified in the SEED RESP
@@ -267,6 +271,17 @@ COSINE
 Calculate the envelope of the time series.  This calculation uses a
 Hilbert transform approximated by a time domain filter.
 
+.IP "-DTRIM"
+Trim each data segment to the common extents for each channel.  In
+other words, trim each segment to start at the latest start time of
+any channel and end at the earliest end time of any channel.  In
+different words, make all channels start and end at the same times.
+
+.IP "-STATS"
+Calculate simple series statistics for each segment and add to the
+process log (see the \fB-plog\fP option), the verbose option will also
+cause them to be printed to stderr.  The statistics include: minimum,
+maximum, mean, standard deviation and RMS.
 
 .SH METADATA FILES
 A metadata file contains a list of station parameters, some of which

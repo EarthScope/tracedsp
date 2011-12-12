@@ -2889,8 +2889,6 @@ calcStats (void *input, char inputtype, int length)
   if ( ! input )
     return -1;
   
-  fprintf (stderr, "calcStats: sample type: '%c', count: %d\n", inputtype, length);
-  
   /* Check sample type and initialize */
   if ( inputtype == 'i' )
     {
