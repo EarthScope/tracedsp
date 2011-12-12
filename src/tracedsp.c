@@ -6,10 +6,8 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.311
+ * modified 2011.345
  ***************************************************************************/
-
-// Add stats output.
 
 // check if doubles can be used throughout convolution code, convert to save memory?
 
@@ -21,6 +19,8 @@
 // Perform polynomial response corrections
 
 // Add resampling process
+
+// Add option to fill gaps under specified length with zeros
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -143,6 +143,7 @@ static int swapSACHeader (struct SACHeader *sh);
 static int addToString (char **string, char *add, char* delim, int where, int maxlen);
 static int addToProcLog (const char *format, ...);
 
+static int calcStats (void *input, char inputtype, int length);
 static int differentiate2 (void *input, char inputtype, int length,
 			   double rate, void *output);
 static int integrateTrap (void *input, char inputtype, int length,
@@ -319,7 +320,16 @@ main (int argc, char **argv)
 	  plp = proclist;
 	  while ( plp && ! errflag )
 	    {
-	      if ( plp->type == PROC_LPFILTER || plp->type == PROC_HPFILTER || plp->type == PROC_BPFILTER )
+	      if ( plp->type == PROC_STATS )
+		{
+		  if ( calcStats (seg->datasamples, seg->sampletype, seg->numsamples) )
+		    {
+		      fprintf (stderr, "Error calculating statistics\n");
+		      errflag = -1;
+		      break;
+		    }
+		}
+	      else if ( plp->type == PROC_LPFILTER || plp->type == PROC_HPFILTER || plp->type == PROC_BPFILTER )
 		{
 		  if ( procFilter (seg, plp) )
 		    {
@@ -2832,6 +2842,139 @@ addToProcLog (const char *format, ...)
 
 
 /***************************************************************************
+ * calcStats():
+ *
+ * Calculate various statistics for the specified data and add the
+ * stats to the process log.
+ *
+ * Running arithmetic mean and standard deviation calculations are
+ * based on Knuth's "The Art of Computer Programming: Semi-Numerical
+ * Algorithms" who further credits B.P. Welford, "Technometrics 4"
+ * (1962), 419-420.
+ *
+ * The algorithm goes:
+ * M[1] = x[1];  S[1] = 0;
+ * for (i=2; i<=n; ++i) {
+ *   M[i] = M[i-1] + (x[i] - M[i-1]) / i
+ *   S[i] = S[i-1] + (x[i] - M[i-1]) * (x[i] - M[i])
+ * }
+ * SD = sqrt(S[n] / (n - 1));
+ *
+ * RMS (root-mean-square) is related to the standard deviation (SD)
+ * and the arithmetic mean (M) in the following way:
+ * 
+ * RMS^2 = M^2 + SD^2
+ *  or
+ * RMS = sqrt( M^2 + SD^2 )
+ *
+ * Return 0 on success and -1 on error.
+ ***************************************************************************/
+static int
+calcStats (void *input, char inputtype, int length)
+{
+  int32_t *idata = (int32_t *) input;
+  float *fdata = (float *) input;
+  double *ddata = (double *) input;
+  int idx;
+  
+  double min;
+  double max;
+  double M = 0.0;
+  double S = 0.0;
+  double pM = 0.0;
+  double pS = 0.0;
+  double SD = 0.0;
+  double RMS = 0.0;
+  
+  if ( ! input )
+    return -1;
+  
+  fprintf (stderr, "calcStats: sample type: '%c', count: %d\n", inputtype, length);
+  
+  /* Check sample type and initialize */
+  if ( inputtype == 'i' )
+    {
+      min = (double) *idata;
+      max = (double) *idata;
+      M = pM = (double) *idata;
+    }
+  else if ( inputtype == 'f' )
+    {
+      min = (double) *fdata;
+      max = (double) *fdata;
+      M = pM = (double) *fdata;
+    }
+  else if ( inputtype == 'd' )
+    {
+      min = (double) *ddata;
+      max = (double) *ddata;
+      M = pM = (double) *ddata;
+    }
+  else
+    {
+      fprintf (stderr, "calcStats: Unsupported sample type: '%c'\n", inputtype);
+      return -1;
+    }
+  
+  /* Determine running min, max, mean, standard deviation and RMS,
+   * skip first value of each series, already initialized */
+  for (idx = 1; idx < length; idx++)
+    {
+      if ( inputtype == 'i' )
+	{
+	  if ( *(idata+idx) > max )
+	    max = *(idata+idx);
+	  
+	  if ( *(idata+idx) < min )
+	    min = *(idata+idx);
+	  
+	  M = pM + (*(idata+idx) - pM) / (idx + 1);
+	  S = pS + (*(idata+idx) - pM) * (*(idata+idx) - M);
+	}
+      else if ( inputtype == 'f' )
+	{
+	  if ( *(fdata+idx) > max )
+	    max = *(fdata+idx);
+	  
+	  if ( *(fdata+idx) < min )
+	    min = *(fdata+idx);
+	  
+	  M = pM + (*(fdata+idx) - pM) / (idx + 1);
+	  S = pS + (*(fdata+idx) - pM) * (*(fdata+idx) - M);
+	}
+      else if ( inputtype == 'd' )
+	{
+	  if ( *(ddata+idx) > max )
+	    max = *(ddata+idx);
+	  
+	  if ( *(ddata+idx) < min )
+	    min = *(ddata+idx);
+	  
+	  M = pM + (*(ddata+idx) - pM) / (idx + 1);
+	  S = pS + (*(ddata+idx) - pM) * (*(ddata+idx) - M);
+	}
+      
+      pM = M;
+      pS = S;
+    }
+  
+  if ( S < 0.0 )
+    {
+      fprintf (stderr, "Accumulator overload, S: %g\n", S);
+      return -1;
+    }
+  
+  SD = sqrt( S / (length - 1) );
+  RMS = sqrt( (M * M) + (SD * SD) );
+  
+  addToProcLog ("Statistics min: %8.1f, max: %8.1f, mean: %8.1f, SD: %8.1f, RMS: %8.1f",
+		min, max, M, SD, RMS);
+  
+  return 0;
+}  /* End of calcStats() */
+
+
+/***************************************************************************
  * differentiate2:
  * 
  * Perform uncentered, two-point differentiation.  The output array
@@ -3256,6 +3399,10 @@ parameterProc (int argcount, char **argvec)
       else if (strcmp (argvec[optind], "-DTRIM") == 0)
         {
 	  addProcess (PROC_DATATRIM, NULL, NULL, 0, 0, 0.0, 0.0);
+        }
+      else if (strcmp (argvec[optind], "-STATS") == 0)
+        {
+	  addProcess (PROC_STATS, NULL, NULL, 0, 0, 0.0, 0.0);
         }
       else if (strncmp (argvec[optind], "-", 1) == 0 &&
 	       strlen (argvec[optind]) > 1 )
@@ -4138,6 +4285,7 @@ usage (void)
 	   " -TAP width[:type]  Apply symmetric taper to time series\n"
 	   " -ENV          Calculate envelope of time series\n"
 	   " -DTRIM        Trim time series to latest start and earliest end\n"
+	   " -STATS        Calculate simple stats and add to processing log, verbose to print\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
 	   "\n");

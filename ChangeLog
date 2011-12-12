@@ -1,5 +1,7 @@
 2011.345:
 	- Add -plog option to log all processing steps to a specified file.
+	- Add -STATS option to calculate simple time series stats and add to
+	process log, including: min, max, mean, SD and RMS.
 
 2011.302:
 	- Add -DTRIM option to trim all segments to common extents by channel,

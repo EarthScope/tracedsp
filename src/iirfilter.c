@@ -89,7 +89,7 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
   double       b0l, b0h;          /* Filter gains */
   double      *doutput;           /* Output samples as doubles */
   double       a1, a2, b1, b2;
-  double       mean;
+  double       mean = 0.0;
   
   /* Sanity check of input parameters */
   if ( ! input || ! output )
