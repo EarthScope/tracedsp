@@ -1,3 +1,7 @@
+2011.348:
+	- Add -POLYM to apply a Maclaurin type polynomial to the data samples
+	using specified coefficients.
+
 2011.345:
 	- Add -plog option to log all processing steps to a specified file.
 	- Add -STATS option to calculate simple time series stats and add to

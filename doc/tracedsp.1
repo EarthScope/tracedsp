@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2011/12/11
+.TH TRACEDSP 1 2011/12/14
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -266,6 +266,17 @@ HANNING (default)
 HAMMING
 COSINE
 .fi
+
+.IP "-POLYM \fIc0,c1,c2,...\fP"
+Apply a Maclaurin type polynomial to the time series using the
+specified coefficients as follows:
+
+.nf
+output(x) = c0 + c1*x + c2*x^2 + ... + cn*x^n
+.fi
+
+where \fBc0\fP,\fBc1\fP,\fBc2\fP .. \fBcn\fP are the coefficients and
+\fBx\fP is the input sample.
 
 .IP "-ENV"
 Calculate the envelope of the time series.  This calculation uses a
