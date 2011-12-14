@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.345
+ * modified 2011.347
  ***************************************************************************/
 
 // check if doubles can be used throughout convolution code, convert to save memory?
@@ -16,7 +16,7 @@
 
 // Add rotation code and options
 
-// Perform polynomial response corrections
+// Perform polynomial response corrections, DONE, needs testing
 
 // Add resampling process
 
@@ -1199,8 +1199,13 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
   int32_t *idata;
   float *fdata;
   double *ddata;
+  char coeffval[20];
+  char *coeffstr = NULL;
   
   if ( ! seg || ! plp )
+    return -1;
+  
+  if ( ! plp->coefficients )
     return -1;
   
   idata = seg->datasamples;
@@ -1236,7 +1241,25 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
       return -1;
     }
   
-  addToProcLog ("Applying Maclaurin type polynomial to data");
+  /* Build coefficient string to print */
+  for (idx=0;idx < plp->coefficientcount;idx++) {
+    snprintf (coeffval, sizeof(coeffval), "%g", plp->coefficients[idx]);
+    
+    retval = addToString (&coeffstr, coeffval, ",", 0, 96);
+    
+    if ( retval < 0 )
+      {
+	if ( retval == -2 )
+	  addToString (&coeffstr, "...", " ", 0, 100);
+	
+	break;
+      }
+  }
+  
+  addToProcLog ("Applying Maclaurin type polynomial to data, cofficients: %s", coeffstr);
+  
+  if ( coeffstr )
+    free (coeffstr);
   
   /* Calculate envelope, replacing original data array */
   retval = applyPolynomialM (seg->datasamples, seg->sampletype, seg->numsamples,
@@ -1245,7 +1268,7 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
   if ( retval < 0 )
     {
       fprintf (stderr, "procPolynomialM(): Error applying polynomial to time series\n");
-      return -1;      
+      return -1;
     }
   
   return 0;
@@ -4168,7 +4191,7 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
   char *filename = NULL;
   char *start = 0;
   char *stop = 0;
-  char *tptr;
+  char *tptr, *eptr;
   double lpcutoff = 0.0;
   double hpcutoff = 0.0;
   double scalefactor = 0.0;
@@ -4322,16 +4345,32 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       tapertype = ivalue1;
       taperwidth = dvalue1;
     }
-
+  
   /* Polynomial */
   if ( type == PROC_POLYNOMIALM )
     {
-      /* string1 == c0,c1,c3,... */
-
-      CHAD, parse cofficients from string1
+      /* string1 == c0,c1,c2,... */
+      double cval;
       
-      //coefficients;
-      //coefficientcount;
+      tptr = string1;
+      while ( tptr )
+	{
+	  cval = strtod (tptr, &eptr);
+	  if ( eptr != tptr )
+	    {
+	      coefficientcount++;
+	      if ( ! (coefficients = realloc (coefficients, coefficientcount*sizeof(double))) )
+		{
+		  fprintf (stderr, "Error allocating memory\n");
+		  exit(1);
+		}
+	      
+	      coefficients[coefficientcount-1] = cval;
+	    }
+	  
+	  if ( (tptr = strchr(tptr, ',')) )
+	    tptr++;
+	}
     }
   
   /* Find last process in list */
@@ -4343,7 +4382,7 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       
       lastlp = lastlp->next;
     }
-
+  
   /* If this is a paired deconvolution-convolution option add operation to last entry */
   if ( type == PROC_CONVOLVE && lastlp && lastlp->type == PROC_CONVOLVE && lastlp->filetype[1] == 0 &&
        (lastlp->filetype[0] == PROC_DECONVRESP || lastlp->filetype[0] == PROC_DECONVSAC) &&
