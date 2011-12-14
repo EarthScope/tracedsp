@@ -40,7 +40,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.4dev"
+#define VERSION "0.9.5dev"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -52,20 +52,22 @@ struct filelink {
 
 /* Linkable structure to hold processing parameters, normally sparse */
 struct proclink {
-  int    type;
-  char  *filename[2];
-  int    filetype[2];
-  int    respstart;
-  int    respstop;
-  double lpcutoff;
-  int    lporder;
-  double hpcutoff;
-  int    hporder;
-  int    reverseflag;
-  double scalefactor;
-  int    decimfactor;
-  double taperwidth;
-  int    tapertype;
+  int     type;
+  char   *filename[2];
+  int     filetype[2];
+  int     respstart;
+  int     respstop;
+  double  lpcutoff;
+  int     lporder;
+  double  hpcutoff;
+  int     hporder;
+  int     reverseflag;
+  double  scalefactor;
+  int     decimfactor;
+  double  taperwidth;
+  int     tapertype;
+  double *coefficients;
+  int     coefficientcount;
   struct proclink *next;
 };
 
@@ -84,8 +86,9 @@ struct proclink {
 #define PROC_SCALE       13
 #define PROC_DECIMATE    14
 #define PROC_TAPER       15
-#define PROC_ENVELOPE    16
-#define PROC_DATATRIM    17
+#define PROC_POLYNOMIALM 16
+#define PROC_ENVELOPE    17
+#define PROC_DATATRIM    18
 
 
 /* Maximum processing log size in bytes, 10 MB */
@@ -119,6 +122,7 @@ static int procRMean (MSTraceSeg *seg, struct proclink *plp);
 static int procScale (MSTraceSeg *seg, struct proclink *plp);
 static int procDecimate (MSTraceSeg *seg, struct proclink *plp);
 static int procTaper (MSTraceSeg *seg, struct proclink *plp);
+static int procPolynomialM (MSTraceSeg *seg, struct proclink *plp);
 static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
 static int procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
 
@@ -148,6 +152,9 @@ static int differentiate2 (void *input, char inputtype, int length,
 			   double rate, void *output);
 static int integrateTrap (void *input, char inputtype, int length,
 			  double halfstep, void *output);
+static int applyPolynomialM (void *input, char inputtype, int length,
+			     double *coeff, int numcoeff, void *output);
+
 static int parameterProc (int argcount, char **argvec);
 static char *getOptVal (int argcount, char **argvec, int argopt, int dasharg);
 static int readMetaData (char *metafile);
@@ -404,6 +411,16 @@ main (int argc, char **argv)
 		  if ( procTaper (seg, plp) )
 		    {
 		      fprintf (stderr, "Error tapering time series %s\n",
+			       id->srcname);
+		      errflag = -1;
+		      break;
+		    }
+		}
+	      else if ( plp->type == PROC_POLYNOMIALM )
+		{
+		  if ( procPolynomialM (seg, plp) )
+		    {
+		      fprintf (stderr, "Error applying Maclaurin polynomial to time series %s\n",
 			       id->srcname);
 		      errflag = -1;
 		      break;
@@ -879,13 +896,17 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
   double Mean, pM;
-  int32_t *idata = seg->datasamples;
-  float *fdata = seg->datasamples;
-  double *ddata = seg->datasamples;
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
   
   if ( ! seg || ! plp )
     return -1;
   
+  idata = seg->datasamples;
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
+
   /* Convert integer samples to floats in-place */
   if ( seg->sampletype == 'i' )
     {
@@ -955,13 +976,17 @@ static int
 procScale (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
-  int32_t *idata = seg->datasamples;
-  float *fdata = seg->datasamples;
-  double *ddata = seg->datasamples;
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
   
   if ( ! seg || ! plp )
     return -1;
   
+  idata = seg->datasamples;
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
+
   /* Convert integer samples to floats in-place */
   if ( seg->sampletype == 'i' )
     {
@@ -1016,13 +1041,17 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
   int numsamples;
-  int32_t *idata = seg->datasamples;
-  float *fdata = seg->datasamples;
-  double *ddata = seg->datasamples;
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
   
   if ( ! seg || ! plp )
     return -1;
   
+  idata = seg->datasamples;
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
+
   /* Convert integer and float samples to doubles */
   if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
     {
@@ -1090,14 +1119,18 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
   int retval;
-  int32_t *idata = seg->datasamples;
-  float *fdata = seg->datasamples;
-  double *ddata = seg->datasamples;
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
   char *typestr = "";
   
   if ( ! seg || ! plp )
     return -1;
   
+  idata = seg->datasamples;
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
+
   /* Convert integer and float samples to doubles */
   if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
     {
@@ -1148,6 +1181,75 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
   
   return 0;
 }  /* End of procTaper() */
+
+
+/***************************************************************************
+ * procPolynomialM:
+ *
+ * Apply a Maclaurin type polynomial to the data series.  Integer and
+ * float samples will be converted to doubles.
+ *
+ * Returns 0 on success and non-zero on error.
+ ***************************************************************************/
+static int
+procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
+{
+  int idx;
+  int retval;
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
+  
+  if ( ! seg || ! plp )
+    return -1;
+  
+  idata = seg->datasamples;
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
+
+  /* Convert integer and float samples to doubles */
+  if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
+    {
+      /* Allocate memory for double samples */
+      if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
+	{
+	  fprintf (stderr, "procPolynomialM(): Cannot allocate memory\n");
+	  return -1;
+	}
+      
+      /* Convert samples to doubles */
+      if ( seg->sampletype == 'i' )
+	for (idx = 0; idx < seg->numsamples; idx++)
+	  ddata[idx] = (double) idata[idx];
+      else
+	for (idx = 0; idx < seg->numsamples; idx++)
+	  ddata[idx] = (double) fdata[idx];
+      
+      free (seg->datasamples);
+      seg->datasamples = ddata;
+      seg->sampletype = 'd';
+    }
+  
+  if ( seg->sampletype != 'd' )
+    {
+      fprintf (stderr, "procPolynomialM(): Unrecognized sample type: '%c'\n", seg->sampletype);
+      return -1;
+    }
+  
+  addToProcLog ("Applying Maclaurin type polynomial to data");
+  
+  /* Calculate envelope, replacing original data array */
+  retval = applyPolynomialM (seg->datasamples, seg->sampletype, seg->numsamples,
+			     plp->coefficients, plp->coefficientcount, seg->datasamples);
+  
+  if ( retval < 0 )
+    {
+      fprintf (stderr, "procPolynomialM(): Error applying polynomial to time series\n");
+      return -1;      
+    }
+  
+  return 0;
+}  /* End of procPolynomialM() */
 
 
 /***************************************************************************
@@ -2872,10 +2974,10 @@ addToProcLog (const char *format, ...)
 static int
 calcStats (void *input, char inputtype, int length)
 {
-  int32_t *idata = (int32_t *) input;
-  float *fdata = (float *) input;
-  double *ddata = (double *) input;
   int idx;
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
   
   double min;
   double max;
@@ -2888,6 +2990,10 @@ calcStats (void *input, char inputtype, int length)
   
   if ( ! input )
     return -1;
+  
+  idata = (int32_t *) input;
+  fdata = (float *) input;
+  ddata = (double *) input;
   
   /* Check sample type and initialize */
   if ( inputtype == 'i' )
@@ -3064,7 +3170,7 @@ integrateTrap (void *input, char inputtype, int length, double halfstep, void *o
   
   if ( ! input || ! output )
     {
-      fprintf (stderr, "integrateTrap(): input or output pointers are NULL\n");      
+      fprintf (stderr, "integrateTrap(): input or output pointers are NULL\n");
       return -1;
     }
   
@@ -3104,6 +3210,88 @@ integrateTrap (void *input, char inputtype, int length, double halfstep, void *o
   
   return length - 1;
 } /* End of integrateTrap() */
+
+
+/***************************************************************************
+ * applyPolynomialM:
+ * 
+ * Apply a Maclaurin-type polynomial to the data samples.
+ *
+ * output(x) = a0 + a1*x + a2*x^2 + ... + an*x^n
+ *
+ *  where a0, a1, a2 ... an are the coefficients of the series.
+ *  where x = input sample, ouput(x) = output sample.
+ *
+ * The input data can be either floats or doubles, the inputtype must
+ * be set to either 'f' or 'd' indicating how the input data should be
+ * treated.
+ *
+ * The output array can be the same as the input array in which case
+ * the input array is replaced.  The output array will be the same
+ * type as the input array and should already be allocated.
+ *
+ * Returns the number of samples in the output array on success and -1
+ * on failure.
+ ***************************************************************************/
+static int
+applyPolynomialM (void *input, char inputtype, int length,
+		  double *coeff, int numcoeff, void *output)
+{
+  int idx;
+  int cdx;
+  
+  float *fin = (float *) input;
+  float *fout = (float *) output;
+  float fval;
+  double *din = (double *) input;
+  double *dout = (double *) output;
+  double dval;
+  
+  if ( ! input || ! coeff || ! output )
+    {
+      fprintf (stderr, "applyPolynomialM(): input, coeff or output pointers are NULL\n");
+      return -1;
+    }
+  
+  if ( numcoeff < 1 ) /* Nothing to do with no coefficients */
+    return 0;
+  
+  if ( inputtype != 'f' && inputtype != 'd' )
+    {
+      fprintf (stderr, "applyPolynomialM(): unsupported input sample type: %c\n",
+	       inputtype);
+      return -1;
+    }
+  
+  if ( inputtype == 'f' )
+    {
+      for (idx=0; idx < length; idx++)
+	{
+	  fval = fin[idx];
+	  
+	  fout[idx] = coeff[0];
+	  for (cdx = 1; cdx < numcoeff; cdx++ )
+	    {
+	      fout[idx] += (coeff[cdx] * pow(fval, cdx));
+	    }
+	}
+    }
+  else if ( inputtype == 'd' )
+    {
+      for (idx=0; idx < length; idx++)
+	{
+	  dval = din[idx];
+	  
+	  dout[idx] = coeff[0];
+	  for (cdx = 1; cdx < numcoeff; cdx++ )
+	    {
+	      dout[idx] += (coeff[cdx] * pow(dval, cdx));
+	    }
+	}
+    }
+  
+  return length;
+} /* End of applyPolynomialM() */
 
 
 /***************************************************************************
@@ -3389,6 +3577,11 @@ parameterProc (int argcount, char **argvec)
 	    }
 	  
 	  addProcess (PROC_TAPER, NULL, NULL, tapertype, 0, taperwidth, 0.0);
+        }
+      else if (strcmp (argvec[optind], "-POLYM") == 0)
+        {
+	  char *coeffstr = getOptVal(argcount, argvec, optind++, 0);
+	  addProcess (PROC_POLYNOMIALM, coeffstr, NULL, 0, 0, 0.0, 0.0);
         }
       else if (strcmp (argvec[optind], "-ENV") == 0)
         {
@@ -3988,6 +4181,8 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
   int decimfactor = -1;
   int tapertype = -1;
   double taperwidth = 0.0;
+  double *coefficients = NULL;
+  int coefficientcount = 0;
   
 
   /* (De)Convolution */
@@ -4127,6 +4322,17 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       tapertype = ivalue1;
       taperwidth = dvalue1;
     }
+
+  /* Polynomial */
+  if ( type == PROC_POLYNOMIALM )
+    {
+      /* string1 == c0,c1,c3,... */
+
+      CHAD, parse cofficients from string1
+      
+      //coefficients;
+      //coefficientcount;
+    }
   
   /* Find last process in list */
   lastlp = proclist;
@@ -4180,6 +4386,8 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       newlp->decimfactor = decimfactor;
       newlp->tapertype = tapertype;
       newlp->taperwidth = taperwidth;
+      newlp->coefficients = coefficients;
+      newlp->coefficientcount = coefficientcount;
       newlp->next = 0;
       
       if ( lastlp == 0 )
@@ -4281,9 +4489,10 @@ usage (void)
 	   " -SI factor    Scale the data samples by inverse of specified factor\n"
 	   " -DEC factor   Decimate time series by specified factor\n"
 	   " -TAP width[:type]  Apply symmetric taper to time series\n"
+	   " -POLYM c1,c2,...   Apply a Maclaurin type polynomial with given coefficients\n"
 	   " -ENV          Calculate envelope of time series\n"
 	   " -DTRIM        Trim time series to latest start and earliest end\n"
-	   " -STATS        Calculate simple stats and add to processing log, verbose to print\n"
+	   " -STATS        Add simple stats to processing log, verbose to print\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
 	   "\n");
