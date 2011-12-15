@@ -1,4 +1,5 @@
 2011.348:
+	- Update libmseed to 2.6.2.
 	- Add -POLYM to apply a Maclaurin type polynomial to the data samples
 	using specified coefficients.
 
