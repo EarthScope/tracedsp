@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.347
+ * modified 2011.348
  ***************************************************************************/
 
 // check if doubles can be used throughout convolution code, convert to save memory?
@@ -15,8 +15,6 @@
 // uses more memory, but is an inconsistent conversion leading to inefficient memory use depending on combination of Ops
 
 // Add rotation code and options
-
-// Perform polynomial response corrections, DONE, needs testing
 
 // Add resampling process
 
