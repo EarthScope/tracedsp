@@ -13,7 +13,7 @@
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
  *
- * Modified: 2011.056
+ * Modified: 2012.004
  *********************************************************************/
 
 #include <stdio.h>
@@ -28,8 +28,9 @@
 #include "whiten.h"
 #include "getpzfr.h"
 
-#define PI 3.1415926535897932384626433
+#define PI 3.1415926535897932384626433832795
 
+CONVERT to use doubles
 
 /*********************************************************************
  * convolve:
@@ -58,7 +59,7 @@
  * Returns 0 on success and -1 on error.
  *********************************************************************/
 int
-convolve (float data[], int npts, double delta, int nfreqs, int nfft,
+convolve (double data[], int npts, double delta, int nfreqs, int nfft,
 	  double *creal, double *cimag, double *dreal, double *dimag,
 	  double taperfreq[], int *prewhiten,
 	  int verbose)
@@ -489,7 +490,7 @@ calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
  * Returns 0 on success and -1 on error.
  *********************************************************************/
 int
-convolve_sac (float data[], int npts, double delta, double taperfreq[], 
+convolve_sac (double data[], int npts, double delta, double taperfreq[], 
 	      int *prewhiten, int deconvflag, char *sacpzfilename,
 	      int verbose)
 {
@@ -561,7 +562,7 @@ convolve_sac (float data[], int npts, double delta, double taperfreq[],
  * Returns 0 on success and -1 on error.
  *********************************************************************/
 int
-convolve_resp (float data[], int npts, double delta,
+convolve_resp (double data[], int npts, double delta,
 	       char *net, char *sta, char *loc, char *chan,
 	       int startstage, int stopstage,
 	       char *units, time_t resptime, int usedelay,

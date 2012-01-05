@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-int convolve (float data[], int npts, double delta, int nfreqs, int nfft,
+int convolve (double data[], int npts, double delta, int nfreqs, int nfft,
 	      double *creal, double *cimag, double *dreal, double *dimag,
 	      double taperfreq[], int *prewhiten,
 	      int verbose);
@@ -21,11 +21,11 @@ int calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
 		 char *respfilename, int totalsensflag, 
 		 double **xreal, double **ximag, int verbose);
 
-int convolve_sac (float data[], int npts, double delta, double taperfreq[],
+int convolve_sac (double data[], int npts, double delta, double taperfreq[],
 		  int *prewhiten, int deconvflag, char *sacpzfilename,
 		  int verbose);
   
-int convolve_resp (float data[], int npts, double delta,
+int convolve_resp (double data[], int npts, double delta,
 		   char *net, char *sta, char *loc, char *chan,
 		   int startstage, int stopstage,
 		   char *units, time_t resptime, int usedelay,
