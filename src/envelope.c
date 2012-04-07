@@ -20,7 +20,7 @@
 #include "envelope.h"
 
 /* Pi, with comical precision */
-#define PI 3.1415926535897932384626433
+#define PI 3.1415926535897932384626433832795
 
 static void conv (int lx, int ifx, double *x,
 		  int ly, int ify, double *y,

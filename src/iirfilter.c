@@ -12,7 +12,8 @@
  * modified after that.
  *
  * Chad Trabant - IRIS Data Management Center
- * modified: 2011.151
+ *
+ * modified: 2012.098
  **********************************************************************/
 
 #include <stdio.h>
@@ -20,25 +21,17 @@
 #include <math.h>
 #include <stdlib.h>
 
-/* Pi, with comical precision */
-#define PI 3.1415926535897932384626433
+#include "complex.h"
 
 typedef struct {
   double real;
   double imag;
 } iircomplex;
 
-iircomplex add_c (iircomplex u, iircomplex v);
-iircomplex mul_c (iircomplex u, iircomplex v);
-iircomplex cmul_c (double a, iircomplex u);
-iircomplex sub_c (iircomplex u, iircomplex v);
-iircomplex div_c (iircomplex u, iircomplex v);
-iircomplex conj_c (iircomplex u);
-
 void applyfilter (double a1, double a2, double b1, double b2,
 		  int npts, int reverse, double *input, double *output);
-void lowpass (double fc, double dt, int n, iircomplex *p, double *b);
-void highpass (double fc, double dt, int n, iircomplex *p, double *b);
+void lowpass (double fc, double dt, int n, complexd *p, double *b);
+void highpass (double fc, double dt, int n, complexd *p, double *b);
 
 
 /**********************************************************************
@@ -84,7 +77,7 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
   double      *dptr;
   int          idx;
   int          outsampsize;       /* Output sample size in bytes */
-  iircomplex   pl[12], ph[12];    /* Filter poles */
+  complexd   pl[12], ph[12];    /* Filter poles */
   double       b0l, b0h;          /* Filter gains */
   double      *doutput;           /* Output samples as doubles */
   double       a1, a2, b1, b2;
@@ -373,108 +366,6 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
 
 
 /**********************************************************************
- * add_c: Add two iircomplex numbers: u + v
- **********************************************************************/
-iircomplex
-add_c (iircomplex u, iircomplex v)
-{
-  iircomplex w;
-  
-  w.real = u.real + v.real;
-  w.imag = u.imag + v.imag;
-  
-  return (w);
-}
-
-
-/**********************************************************************
- * mul_c: Multiply two iircomplex numbers: u * v
- **********************************************************************/
-iircomplex
-mul_c (iircomplex u, iircomplex v)
-{
-  iircomplex w;
-  
-  w.real = u.real*v.real - u.imag*v.imag;
-  w.imag = u.real*v.imag + u.imag*v.real;
-  
-  return (w);
-}
-
-
-/**********************************************************************
- * cmul_c: Multiply a real number and an iircomplex number
- **********************************************************************/
-iircomplex
-cmul_c (double a, iircomplex u)
-{
-  iircomplex w;
-  
-  w.real = a * u.real;
-  w.imag = a * u.imag;
-  
-  return (w);
-}
-
-
-/**********************************************************************
- * sub_c: Subtract two iircomplex numbers: u - v
- **********************************************************************/
-iircomplex
-sub_c (iircomplex u, iircomplex v)
-{
-  iircomplex w;
-  
-  w.real = u.real - v.real;
-  w.imag = u.imag - v.imag;
-  
-  return (w);
-}
-
-
-/**********************************************************************
- * div_c: Divide two iircomplex numbers: u / v
- **********************************************************************/
-iircomplex
-div_c (iircomplex u, iircomplex v)
-{
-  iircomplex w;
-
-  w.real = w.imag = 0;
-  
-  /* Check for divide by 0 */
-  if ( v.real != 0 && v.imag != 0 )
-    {
-      w.real = ((u.real * v.real) + (u.imag * v.imag)) /
-	((v.real * v.real) + (v.imag * v.imag));
-      w.imag = ((u.imag * v.real) - (u.real * v.imag)) /
-	((v.real * v.real) + (v.imag * v.imag));
-    }
-  else
-    {
-      fprintf (stderr, "ERROR: iircomplex division by 0 in div_c\n");
-    }
-  
-  return (w);
-}
-
-
-/**********************************************************************
- * conj_c: Calculate the iircomplex conjugate
- **********************************************************************/
-iircomplex
-conj_c (iircomplex u)
-{
-  iircomplex w;
-  
-  w.real = u.real;
-  w.imag = -u.imag;
-  
-  return (w);
-}
-
-
-/**********************************************************************
  * applyfilter:
  *
  * Apply a second order recursive filter to a data array.
@@ -536,9 +427,9 @@ applyfilter (double a1, double a2, double b1, double b2,
  *
  **********************************************************************/
 void
-lowpass (double fc, double dt, int n, iircomplex *p, double *b)
+lowpass (double fc, double dt, int n, complexd *p, double *b)
 {  
-  iircomplex one, x, y;
+  complexd one, x, y;
   double wcp, wc, b0;
   int i, i1;
   
@@ -553,27 +444,27 @@ lowpass (double fc, double dt, int n, iircomplex *p, double *b)
       i1 = i + 1;
       p[i].real = -wc * cos(i1*PI/(2*n));
       p[i].imag = wc * sin(i1*PI/(2*n));
-      p[i+1] = conj_c(p[i]);
+      p[i+1] = cmplxconj(p[i]);
     }
   
   /* Calculate position of poles for discrete filter using
    * the bilinear transformation */
   for ( i=0 ; i < n ; i += 2 )
     {
-      p[i] = cmul_c(dt/2,p[i]);
-      x = add_c(one,p[i]);
-      y = sub_c(one,p[i]);
-      p[i] = div_c(x,y);
-      p[i+1] = conj_c(p[i]);
+      p[i] = cmplxdmul(dt/2,p[i]);
+      x = cmplxadd(one,p[i]);
+      y = cmplxsub(one,p[i]);
+      p[i] = cmplxdiv(x,y);
+      p[i+1] = cmplxconj(p[i]);
     }
   
   /* Calculate filter gain */
   b0 = 1.0;
   for ( i=0 ; i < n ; i +=2 )
     {
-      x = sub_c(one,p[i]);
-      y = sub_c(one,p[i+1]);
-      x = mul_c(x,y);
+      x = cmplxsub(one,p[i]);
+      y = cmplxsub(one,p[i+1]);
+      x = cmplxmul(x,y);
       b0 = b0 * 4.0 / x.real;
     }
   *b = 1.0 / b0;
@@ -597,9 +488,9 @@ lowpass (double fc, double dt, int n, iircomplex *p, double *b)
  *
  **********************************************************************/
 void
-highpass (double fc, double dt, int n, iircomplex *p, double *b)
+highpass (double fc, double dt, int n, complexd *p, double *b)
 {  
-  iircomplex one, x, y;
+  complexd one, x, y;
   double wcp, wc,  alpha, b0;
   int i;
   
@@ -615,21 +506,21 @@ highpass (double fc, double dt, int n, iircomplex *p, double *b)
   /* Now find poles for high-pass filter */
   for ( i=0 ; i < n ; i += 2 )
     {
-      x = cmul_c (alpha,one) ;
-      x = sub_c (x,p[i]) ;
-      y = cmul_c (alpha,p[i]) ;
-      y = sub_c(one,y) ;
-      p[i] = div_c(x,y) ;
-      p[i+1] = conj_c(p[i]) ;
+      x = cmplxdmul (alpha,one) ;
+      x = cmplxsub (x,p[i]) ;
+      y = cmplxdmul (alpha,p[i]) ;
+      y = cmplxsub(one,y) ;
+      p[i] = cmplxdiv(x,y) ;
+      p[i+1] = cmplxconj(p[i]) ;
     }
   
   /* Calculate gain for high-pass filter */
   b0 = 1.0;
   for ( i=0 ; i < n ; i += 2 )
     {
-      x = add_c(one,p[i]);
-      y = add_c(one,p[i+1]);
-      x = mul_c(x,y);
+      x = cmplxadd(one,p[i]);
+      y = cmplxadd(one,p[i+1]);
+      x = cmplxmul(x,y);
       b0 = b0 * 4.0 / x.real;
     }
   *b = 1.0 / b0;

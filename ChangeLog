@@ -1,6 +1,8 @@
 2012.098:
 	- Change all internal sample conversions to default to converting to
 	doubles.
+	- Convert iirfilter complex number operations to use common routines
+	in complex.h.
 
 2011.348:
 	- Update libmseed to 2.6.2.

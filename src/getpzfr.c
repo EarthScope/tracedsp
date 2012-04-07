@@ -7,7 +7,7 @@
  * The calcfr() routine is a cleaned up version of the equivalent in
  * SAC 2000.
  *
- * modified: 2007.149
+ * modified: 2012.098
  *********************************************************************/
 
 #include <stdio.h>
@@ -23,8 +23,8 @@
 #define	MAXZEROS 30
 
 void calcfr (int nfreq, double delfreq, double constant,
-	     int nzero, complexf zeros[],
-	     int npole, complexf poles[],
+	     int nzero, complexd zeros[],
+	     int npole, complexd poles[],
 	     double xreal[], double ximag[]);
 
 
@@ -57,8 +57,8 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
   char  reading = 0; /* 0 = unknown, 1 = zeros, 2 = poles */
   int   linecount = 0;
   
-  complexf zeros[MAXZEROS];
-  complexf poles[MAXPOLES];
+  complexd zeros[MAXZEROS];
+  complexd poles[MAXPOLES];
   double constant;
   int rdconstant = 0;
   int nzeros  = 0;
@@ -83,12 +83,12 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
   
   for ( idx = 0; idx < MAXZEROS; idx++ )
     {
-      zeros[idx] = flttocmplx (0.0, 0.0);
+      zeros[idx] = dbltocmplx (0.0, 0.0);
     }
   
   for ( idx = 0; idx < MAXPOLES; idx++ )
     {
-      poles[idx] = flttocmplx (0.0, 0.0);
+      poles[idx] = dbltocmplx (0.0, 0.0);
     }
   
   /* Open P&Z file */
@@ -196,7 +196,7 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
 	      return -1;
 	    }
 	  
-	  zeros[zeroidx++] = flttocmplx (reald, imagd);
+	  zeros[zeroidx++] = dbltocmplx (reald, imagd);
 	  continue;
 	}
       else if ( reading == 2 ) /* Reading POLES */
@@ -214,7 +214,7 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
 	      return -1;
 	    }
 	  
-	  poles[poleidx++] = flttocmplx (reald, imagd);
+	  poles[poleidx++] = dbltocmplx (reald, imagd);
 	  continue;
 	}
     } /* Done reading file */
@@ -256,8 +256,8 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
  *********************************************************************/
 void
 calcfr (int nfreq, double delfreq, double constant,
-	int nzero, complexf zeros[],
-	int npole, complexf poles[],
+	int nzero, complexd zeros[],
+	int npole, complexd poles[],
 	double xreal[], double ximag[])
 {
   double delomg, fac, omega;
@@ -266,7 +266,7 @@ calcfr (int nfreq, double delfreq, double constant,
   
   int idx, jdx;
   
-  delomg = 6.283185307179586 * delfreq;
+  delomg = 2 * PI * delfreq;
   
   for ( jdx = 0; jdx < nfreq; jdx++ )
     {

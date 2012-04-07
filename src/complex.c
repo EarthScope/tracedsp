@@ -5,7 +5,7 @@
  *
  * Based on routines from the SAC 2000 source code.
  *
- * modified: 2006.160
+ * modified: 2012.098
  *********************************************************************/
 
 #include <stdio.h>
@@ -14,68 +14,85 @@
 
 #include "complex.h"
 
+/* Return the imaginary part of a complex number */
 double
-cmplximag (complexf c)
+cmplximag (complexd c)
 {
   return (c.imag);
 }
 
+/* Return the real part of a complex number */
 double
-cmplxreal (complexf c)
+cmplxreal (complexd c)
 {
   return (c.real);
 }
 
-complexf
-cmplxadd (complexf c1, complexf c2)
+/* Add two complex numbers */
+complexd
+cmplxadd (complexd c1, complexd c2)
 {
   c1.real += c2.real;
   c1.imag += c2.imag;
   return (c1);
 }
 
-complexf
-cmplxcj (complexf c)
+/* Return complex conjugate */
+complexd
+cmplxconj (complexd c)
 {
   c.imag = -c.imag;
   return (c);
 }
 
-complexf
-cmplxmul (complexf c1, complexf c2)
+/* Multiple two complex numbers */
+complexd
+cmplxmul (complexd c1, complexd c2)
 {
-  complexf c3;
+  complexd c3;
   
   c3.real = (c1.real * c2.real) - (c1.imag * c2.imag);
   c3.imag = (c1.real * c2.imag) + (c1.imag * c2.real);
   return (c3);
 }
 
-complexf
-flttocmplx (double d1, double d2)
+/* Multiple a real number and a complex number */
+complexd
+cmplxdmul (double d, complexd c)
 {
-  complexf c;
+  c.real *= d;
+  c.imag *= d;
+  return (c);
+}
+
+/* Create complex number from double */
+complexd
+dbltocmplx (double d1, double d2)
+{
+  complexd c;
   c.real = d1;
   c.imag = d2;
   return (c);
 }
 
-complexf
-cmplxsub (complexf c1, complexf c2)
+/* Subtract two complex numbers */
+complexd
+cmplxsub (complexd c1, complexd c2)
 {
   c1.real -= c2.real;
   c1.imag -= c2.imag;
   return (c1);
 }
 
+/* Absolute value of complex number */
 double
-cmplxabs (complexf c)
+cmplxabs (complexd c)
 {
   return (sqrt((double)((c.real*c.real) + (c.imag*c.imag))));
 } 
 
 double
-cmplxang (complexf c)
+cmplxang (complexd c)
 {
   double d = 1.0;
 
@@ -85,31 +102,32 @@ cmplxang (complexf c)
       if ( c.real > 0 ) 
 	d = 0;
       else if ( c.real < 0 ) 
-	d = 3.1415926536;
+	d = PI;
     }
   else if (c.real < 1.0e-14 && c.real > -1.0e-14 && fabs(c.imag) > 1.0e-7 )
     {
       /* d = asin(c.imag/cmplxabs(c)); */
       if ( c.imag > 0 ) 
-	d = 3.1415926536/2;
+	d = PI / 2;
       else if ( c.real < 0 ) 
-	d = -3.1415926536/2;
+	d = -PI / 2;
     }
   else
     {
       d = atan(c.imag/c.real);
       if (c.real < 0.0)
 	{
-	  if (c.imag < 0.0) d -= 3.1415926536;
-	  else           d += 3.1415926536;
+	  if (c.imag < 0.0) d -= PI;
+	  else              d += PI;
 	}
     }
 
   return (d);
 }
 
-complexf
-cmplxsqrt (complexf c)
+/* Return square root of complex number */
+complexd
+cmplxsqrt (complexd c)
 {
   double sqrtsave, angle;
 
@@ -130,10 +148,11 @@ cmplxsqrt (complexf c)
   return (c);
 }
 
-complexf
-cmplxdiv (complexf c1, complexf c2)
+/* Divide complex numbers */
+complexd
+cmplxdiv (complexd c1, complexd c2)
 {
-  complexf c;
+  complexd c;
   double d;
   
   if (c2.real == 0.0 && c2.imag == 0.0)
@@ -152,10 +171,11 @@ cmplxdiv (complexf c1, complexf c2)
   return (c);
 }
 
-complexf
-cmplxlog (complexf c)
+/* Logarithm of complex number */
+complexd
+cmplxlog (complexd c)
 {
-  complexf c1;
+  complexd c1;
   
   c1.real = log (cmplxabs(c));
   c1.imag = cmplxang (c);
@@ -163,8 +183,9 @@ cmplxlog (complexf c)
   return (c1);
 }
 
-complexf
-cmplxexp (complexf c)
+/* Raise natural logarithm e to the power of the complex number */
+complexd
+cmplxexp (complexd c)
 {
   double d;
   
@@ -185,8 +206,9 @@ cmplxexp (complexf c)
   return (c);
 }
 
-complexf
-cmplxpow (complexf c, double d)
+/* Raise complex number to specified power */
+complexd
+cmplxpow (complexd c, double d)
 {
   if (c.real == 0.0 && c.imag == 0.0)
     return (c);
@@ -198,8 +220,9 @@ cmplxpow (complexf c, double d)
   return (cmplxexp(c));
 }
 
-complexf
-cmplxneg (complexf c)
+/* Negate complex number */
+complexd
+cmplxneg (complexd c)
 {
   c.real = -c.real;
   c.imag = -c.imag;

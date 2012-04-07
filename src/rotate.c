@@ -47,7 +47,7 @@
 #include "rotate.h"
 
 /* Pi, with comical precision */
-#define PI 3.1415926535897932384626433
+#define PI 3.1415926535897932384626433832795
 
 /* half of square root of 3 */
 #define SQRT3_2 0.8660254
