@@ -7,7 +7,7 @@
  * then applying this filter.  The dewhitening process then applies a
  * prediction filter using the same coefficients.
  *
- * modified: 2006.163
+ * modified: 2012.098
  *********************************************************************/
 
 #include <stdio.h>
@@ -42,7 +42,7 @@
  * Returns 0 on success and -1 on error.
  *********************************************************************/
 int
-whiten (float data[], int npts, int *order, double coef[])
+whiten (double data[], int npts, int *order, double coef[])
 {
   int idx, jdx, j2, kdx, kb, torder;
   double at, q;
@@ -143,7 +143,7 @@ whiten (float data[], int npts, int *order, double coef[])
  * Returns 0 on success and -1 on error.
  *********************************************************************/
 int
-dewhiten (float data[], int npts, int order, double coef[])
+dewhiten (double data[], int npts, int order, double coef[])
 {
   long int i;
   double precoef[NCMAX];
@@ -191,7 +191,7 @@ dewhiten (float data[], int npts, int order, double coef[])
  * Returns the minimum mean square error
  *********************************************************************/
 double
-LPCautocorr (float data[], int npts, int order,
+LPCautocorr (double data[], int npts, int order,
 	     double lpc[], double ref[])
 {
   double corr[NCMAX];
@@ -265,14 +265,14 @@ LPCautocorr (float data[], int npts, int order,
  * Returns the minimum mean square error
  *********************************************************************/
 int
-applypef (float data[], int npts, double coef[], int nc, float result[])
+applypef (double data[], int npts, double coef[], int nc, double result[])
 {
   int bufptr, datptr;
   int idx, lsamp, ncmp, nextra;
   double e;
   
-  float inbuf[2000];
-  float outbuf[2000];
+  double inbuf[2000];
+  double outbuf[2000];
   
   /* Initializations */
   datptr = 0;
@@ -284,13 +284,13 @@ applypef (float data[], int npts, double coef[], int nc, float result[])
       return -1;
     }
   
-  memset (inbuf, 0, 2000);
-  memset (outbuf, 0, 2000);
+  for ( idx = 0 ; idx < 2000 ; idx++ )
+    inbuf[idx] = outbuf[idx] = 0.0;
   
   while ( datptr < npts )
     {
       /* Shift input buffer points back */
-      memmove (inbuf, &inbuf[nextra], nc * sizeof(float));
+      memmove (inbuf, &inbuf[nextra], nc * sizeof(double));
       
       /* Calculate start and stop points for buffer index */
       bufptr = nc;
@@ -298,7 +298,7 @@ applypef (float data[], int npts, double coef[], int nc, float result[])
       ncmp = lsamp - nc;
       
       /* Load new data into input buffer */
-      memcpy (&inbuf[nc], &data[datptr], ncmp * sizeof(float));
+      memcpy (&inbuf[nc], &data[datptr], ncmp * sizeof(double));
       
       /* Filter data */
       while ( bufptr <= lsamp )
@@ -316,7 +316,7 @@ applypef (float data[], int npts, double coef[], int nc, float result[])
 	}
       
       /* Store newly filtered data and update data pointer */
-      memcpy (&result[datptr], &outbuf[nc], ncmp * sizeof(float));
+      memcpy (&result[datptr], &outbuf[nc], ncmp * sizeof(double));
       
       datptr += ncmp;
     }
@@ -340,15 +340,15 @@ applypef (float data[], int npts, double coef[], int nc, float result[])
  * Returns the minimum mean square error
  *********************************************************************/
 int
-applypf (float data[], int npts, double coef[], int nc, float result[])
+applypf (double data[], int npts, double coef[], int nc, double result[])
 {
   int bufptr, dataptr;
   int idx, lsamp, ncmp;
-  float history[NCMAX];
+  double history[NCMAX];
   double eo;
   
-  float inbuf[2000];
-  float outbuf[2000];
+  double inbuf[2000];
+  double outbuf[2000];
   
   if ( nc > NCMAX )
     {
@@ -371,7 +371,7 @@ applypf (float data[], int npts, double coef[], int nc, float result[])
       ncmp = lsamp;
       
       /* Load new data into input buffer */
-      memcpy (inbuf, &data[dataptr], ncmp * sizeof(float));
+      memcpy (inbuf, &data[dataptr], ncmp * sizeof(double));
       
       /* Filter data */
       while ( bufptr < lsamp )
@@ -393,7 +393,7 @@ applypf (float data[], int npts, double coef[], int nc, float result[])
 	}
       
       /* Store newly filtered data */
-      memcpy (&result[dataptr], outbuf, ncmp * sizeof(float));
+      memcpy (&result[dataptr], outbuf, ncmp * sizeof(double));
       
       /* Increment data pointer */
       dataptr += ncmp;

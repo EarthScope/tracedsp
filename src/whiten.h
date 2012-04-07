@@ -8,12 +8,12 @@ extern "C" {
 #endif
 
 
-int whiten (float data[], int npts, int *order, double coef[]);
-int dewhiten (float data[], int npts, int order, double coef[]);
-double LPCautocorr (float data[], int npts, int order,
+int whiten (double data[], int npts, int *order, double coef[]);
+int dewhiten (double data[], int npts, int order, double coef[]);
+double LPCautocorr (double data[], int npts, int order,
                     double lpc[], double ref[] );
-int applypef (float data[], int npts, double coef[], int nc, float result[]);
-int applypf (float data[], int npts, double coef[], int nc, float result[]);
+int applypef (double data[], int npts, double coef[], int nc, double result[]);
+int applypf (double data[], int npts, double coef[], int nc, double result[]);
 
 
 #ifdef __cplusplus

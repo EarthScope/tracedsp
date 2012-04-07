@@ -13,7 +13,7 @@
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
  *
- * Modified: 2012.004
+ * Modified: 2012.098
  *********************************************************************/
 
 #include <stdio.h>
@@ -29,8 +29,6 @@
 #include "getpzfr.h"
 
 #define PI 3.1415926535897932384626433832795
-
-CONVERT to use doubles
 
 /*********************************************************************
  * convolve:
@@ -730,13 +728,16 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
   int i;
   double amp;
   double maxamp = 0.0;
-  double lowestamp = 0.0;
-  double highestamp = 0.0;
-  double maxfreq = 0.0;
   double lowestfreq = 0.0;
   double highestfreq = 0.0;
   double dBdelta = 0.0;
   
+  /*
+  double lowestamp = 0.0;
+  double highestamp = 0.0;
+  double maxfreq = 0.0;
+  */
+
   /* Set default dBdown if needed */
   if ( lcdBdown < 0.0 )
     lcdBdown = 3.0;
@@ -760,7 +761,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	  if ( maxamp == 0.0 || amp > maxamp )
 	    {
 	      maxamp = amp;
-	      maxfreq = i * delfreq;
+	      //maxfreq = i * delfreq;
 	    }
 	  
 	  dBdelta = 20 * log10 (amp / maxamp);
@@ -768,7 +769,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	  /* Track amplitude/frequency above the minimum amplitude */
 	  if ( -dBdelta <= lcdBdown )
 	    {
-	      lowestamp = amp;
+	      //lowestamp = amp;
 	      lowestfreq = i * delfreq;
 	    }
 	}
@@ -799,7 +800,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	  if ( maxamp == 0.0 || amp > maxamp )
 	    {
 	      maxamp = amp;
-	      maxfreq = i * delfreq;
+	      //maxfreq = i * delfreq;
 	    }
 	  
 	  dBdelta = 20 * log10 (amp / maxamp);
@@ -807,7 +808,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
 	  /* Track amplitude/frequency above the minimum amplitude */
 	  if ( -dBdelta <= ucdBdown )
 	    {
-	      highestamp = amp;
+	      //highestamp = amp;
 	      highestfreq = i * delfreq;
 	    }
 	}

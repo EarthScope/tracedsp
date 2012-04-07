@@ -83,7 +83,6 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
   float       *fptr;
   double      *dptr;
   int          idx;
-  int          insampsize;        /* Input sample size in bytes */
   int          outsampsize;       /* Output sample size in bytes */
   iircomplex   pl[12], ph[12];    /* Filter poles */
   double       b0l, b0h;          /* Filter gains */
@@ -95,16 +94,12 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
   if ( ! input || ! output )
     return 1;
   
-  /* Determine sample sizes */
-  switch ( inputtype )
+  if ( inputtype != 'i' && inputtype != 'f' && inputtype != 'd' )
     {
-    case 'i': insampsize = 4; break;
-    case 'f': insampsize = 4; break;
-    case 'd': insampsize = 8; break;
-    default:
       fprintf (stderr, "[iirfilter] Unknown input data type: %d\n", inputtype);
       return 1;
     }
+  
   switch ( outputtype )
     {
     case 'i': outsampsize = 4; break;

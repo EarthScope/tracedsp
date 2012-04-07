@@ -6,13 +6,8 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2011.348
+ * modified 2012.098
  ***************************************************************************/
-
-// check if doubles can be used throughout convolution code, convert to save memory?
-
-// convert conversions from int to default to doubles ??
-// uses more memory, but is an inconsistent conversion leading to inefficient memory use depending on combination of Ops
 
 // Add rotation code and options
 
@@ -153,6 +148,7 @@ static int integrateTrap (void *input, char inputtype, int length,
 static int applyPolynomialM (void *input, char inputtype, int length,
 			     double *coeff, int numcoeff, void *output);
 
+static int convertSamples (MSTraceSeg *seg, char type);
 static int parameterProc (int argcount, char **argvec);
 static char *getOptVal (int argcount, char **argvec, int argopt, int dasharg);
 static int readMetaData (char *metafile);
@@ -527,7 +523,7 @@ main (int argc, char **argv)
  * procFilter:
  * 
  * Apply filter to the MSTraceSeg, results are requested to be
- * returned as floats.
+ * returned as doubles.
  *
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
@@ -554,7 +550,7 @@ procFilter (MSTraceSeg *seg, struct proclink *plp)
       
       /* Apply the filter */
       if ( iirfilter (seg->datasamples, seg->sampletype, seg->numsamples, plp->reverseflag,
-		      &datasamples, 'f', plp->hporder, plp->hpcutoff,
+		      &datasamples, 'd', plp->hporder, plp->hpcutoff,
 		      plp->lporder, plp->lpcutoff, seg->samprate, verbose) )
 	{
 	  if ( datasamples )
@@ -568,7 +564,7 @@ procFilter (MSTraceSeg *seg, struct proclink *plp)
 	    free (seg->datasamples);
 	  
 	  seg->datasamples = datasamples;
-	  seg->sampletype = 'f';
+	  seg->sampletype = 'd';
 	}
     }
   
@@ -580,17 +576,15 @@ procFilter (MSTraceSeg *seg, struct proclink *plp)
  * procConvolve:
  * 
  * Convolve or deconvolve supplied response(s) from signal.  The
- * convolution routines require floats so this routine will always
- * convert the supplied data to floats and return the results as
- * floats.  The (de)convolution calculations themselves are performed
- * using doubles.
+ * convolution routines require doubless so this routine will always
+ * convert the supplied data to doubles and return the results as
+ * doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
 procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 {
-  float *fdata = 0;
   int idx;
   int retval = 0;
   int nfft;
@@ -607,47 +601,11 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
   if ( ! seg || ! plp )
     return -1;
   
-  /* Convert samples to floats if needed */
-  if ( seg->sampletype == 'f' )
+  /* Convert samples to doubles if needed */
+  if ( seg->sampletype != 'd' )
     {
-      fdata = seg->datasamples;
-    }
-  else
-    {
-      if ( (fdata = (float *) malloc (seg->numsamples * sizeof(float))) == NULL )
-	{
-	  fprintf (stderr, "Error allocating memory\n");
-	  return -1;
-	}
-      
-      if ( seg->sampletype == 'i' )
-	{
-	  int32_t *iptr = seg->datasamples;
-	  for (idx = 0; idx < seg->numsamples; idx++)
-	    fdata[idx] = (float) iptr[idx];
-	  
-	  free (seg->datasamples);
-	  seg->datasamples = fdata;
-	  seg->sampletype = 'f';
-	}
-      else if ( seg->sampletype == 'd' )
-	{
-	  double *dptr = seg->datasamples;
-	  for (idx = 0; idx < seg->numsamples; idx++)
-	    fdata[idx] = (float) dptr[idx];
-	  
-	  free (seg->datasamples);
-	  seg->datasamples = fdata;
-	  seg->sampletype = 'f';
-	}
-      else
-	{
-	  fprintf (stderr, "procConvolve(): unsupported sample type: %c\n",
-		   seg->sampletype);
-	  if ( fdata )
-	    free (fdata);
-	  return -1;
-	}
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   
   /* Calculate common parameters */
@@ -754,7 +712,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
     }
   
   /* Perform convolution, deconvolution or both */
-  retval = convolve (fdata, seg->numsamples, 1.0/seg->samprate, nfreqs, nfft,
+  retval = convolve (seg->datasamples, seg->numsamples, 1.0/seg->samprate, nfreqs, nfft,
 		     creal, cimag, dreal, dimag, freqlimit, &prewhiten, verbose);
   
   /* Free response function arrays */
@@ -775,29 +733,23 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
  * procDiff2:
  * 
  * Prepare for an uncentered, 2-point differentiation.  Integer
- * samples will be converted to floats.
+ * samples will be converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
 procDiff2 (MSTraceSeg *seg, struct proclink *plp)
 {
-  int idx;
   int count;
   
   if ( ! seg || ! plp )
     return -1;
   
-  /* Convert integer samples to floats in-place */
+  /* Convert integer samples to doubles */
   if ( seg->sampletype == 'i' )
     {
-      int32_t *iptr = seg->datasamples;
-      float *fdata = seg->datasamples;
-      
-      for (idx = 0; idx < seg->numsamples; idx++)
-	fdata[idx] = (float) iptr[idx];
-      
-      seg->sampletype = 'f';
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   else if ( seg->sampletype != 'f' && seg->sampletype != 'd' )
     {
@@ -830,29 +782,23 @@ procDiff2 (MSTraceSeg *seg, struct proclink *plp)
  * procIntTrap:
  * 
  * Prepare for integration using the trapezoidal (midpoint) method.
- * Integer samples will be converted to floats.
+ * Integer samples will be converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
 procIntTrap (MSTraceSeg *seg, struct proclink *plp)
 {
-  int idx;
   int count;
   
   if ( ! seg || ! plp )
     return -1;
   
-  /* Convert integer samples to floats in-place */
+  /* Convert integer samples to doubles */
   if ( seg->sampletype == 'i' )
     {
-      int32_t *iptr = seg->datasamples;
-      float *fdata = seg->datasamples;
-      
-      for (idx = 0; idx < seg->numsamples; idx++)
-	fdata[idx] = (float) iptr[idx];
-      
-      seg->sampletype = 'f';
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   else if ( seg->sampletype != 'f' && seg->sampletype != 'd' )
     {
@@ -885,7 +831,7 @@ procIntTrap (MSTraceSeg *seg, struct proclink *plp)
  * procRMean:
  * 
  * Removes the mean from a time series.  Integer samples will be
- * converted to floats.
+ * converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
@@ -894,24 +840,17 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
   double Mean, pM;
-  int32_t *idata;
   float *fdata;
   double *ddata;
   
   if ( ! seg || ! plp )
     return -1;
-  
-  idata = seg->datasamples;
-  fdata = seg->datasamples;
-  ddata = seg->datasamples;
-
-  /* Convert integer samples to floats in-place */
+    
+  /* Convert integer samples to doubles */
   if ( seg->sampletype == 'i' )
     {
-      for (idx = 0; idx < seg->numsamples; idx++)
-	fdata[idx] = (float) idata[idx];
-      
-      seg->sampletype = 'f';
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   else if ( seg->sampletype != 'f' && seg->sampletype != 'd' )
     {
@@ -919,6 +858,9 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
 	       seg->sampletype);
       return -1;
     }
+  
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
   
   /* Find mean value */
   if ( seg->sampletype == 'f' )
@@ -966,7 +908,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
  * procScale:
  *
  * Scales all data samples in a time series.  Integer samples will be
- * converted to floats.
+ * converted to doubles.
  *
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
@@ -974,24 +916,17 @@ static int
 procScale (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
-  int32_t *idata;
   float *fdata;
   double *ddata;
   
   if ( ! seg || ! plp )
     return -1;
   
-  idata = seg->datasamples;
-  fdata = seg->datasamples;
-  ddata = seg->datasamples;
-
-  /* Convert integer samples to floats in-place */
+  /* Convert integer samples to doubles */
   if ( seg->sampletype == 'i' )
     {
-      for (idx = 0; idx < seg->numsamples; idx++)
-	fdata[idx] = (float) idata[idx];
-      
-      seg->sampletype = 'f';
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   else if ( seg->sampletype != 'f' && seg->sampletype != 'd' )
     {
@@ -999,6 +934,9 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
 	       seg->sampletype);
       return -1;
     }
+  
+  fdata = seg->datasamples;
+  ddata = seg->datasamples;
   
   /* Scale sample values */
   if ( seg->sampletype == 'f' )
@@ -1037,40 +975,16 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
 static int
 procDecimate (MSTraceSeg *seg, struct proclink *plp)
 {
-  int idx;
   int numsamples;
-  int32_t *idata;
-  float *fdata;
-  double *ddata;
   
   if ( ! seg || ! plp )
     return -1;
   
-  idata = seg->datasamples;
-  fdata = seg->datasamples;
-  ddata = seg->datasamples;
-
-  /* Convert integer and float samples to doubles */
-  if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
+  /* Convert samples to doubles */
+  if ( seg->sampletype != 'd' )
     {
-      /* Allocate memory for double samples */
-      if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
-	{
-	  fprintf (stderr, "procDecimate(): Cannot allocate memory\n");
-	  return -1;
-	}
-      
-      /* Convert samples to doubles */
-      if ( seg->sampletype == 'i' )
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) idata[idx];
-      else
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) fdata[idx];
-      
-      free (seg->datasamples);
-      seg->datasamples = ddata;
-      seg->sampletype = 'd';
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   
   addToProcLog ("Decimating time series by a factor of %d (%g -> %g sps)",
@@ -1115,47 +1029,17 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
 static int
 procTaper (MSTraceSeg *seg, struct proclink *plp)
 {
-  int idx;
   int retval;
-  int32_t *idata;
-  float *fdata;
-  double *ddata;
   char *typestr = "";
   
   if ( ! seg || ! plp )
     return -1;
   
-  idata = seg->datasamples;
-  fdata = seg->datasamples;
-  ddata = seg->datasamples;
-
   /* Convert integer and float samples to doubles */
-  if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
-    {
-      /* Allocate memory for double samples */
-      if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
-	{
-	  fprintf (stderr, "procTaper(): Cannot allocate memory\n");
-	  return -1;
-	}
-      
-      /* Convert samples to doubles */
-      if ( seg->sampletype == 'i' )
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) idata[idx];
-      else
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) fdata[idx];
-      
-      free (seg->datasamples);
-      seg->datasamples = ddata;
-      seg->sampletype = 'd';
-    }
-  
   if ( seg->sampletype != 'd' )
     {
-      fprintf (stderr, "procTaper(): Unrecognized sample type: '%c'\n", seg->sampletype);
-      return -1;
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   
   /* Perform the tapering */
@@ -1194,9 +1078,6 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
 {
   int idx;
   int retval;
-  int32_t *idata;
-  float *fdata;
-  double *ddata;
   char coeffval[20];
   char *coeffstr = NULL;
   
@@ -1206,37 +1087,11 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
   if ( ! plp->coefficients )
     return -1;
   
-  idata = seg->datasamples;
-  fdata = seg->datasamples;
-  ddata = seg->datasamples;
-
-  /* Convert integer and float samples to doubles */
-  if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
-    {
-      /* Allocate memory for double samples */
-      if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
-	{
-	  fprintf (stderr, "procPolynomialM(): Cannot allocate memory\n");
-	  return -1;
-	}
-      
-      /* Convert samples to doubles */
-      if ( seg->sampletype == 'i' )
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) idata[idx];
-      else
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) fdata[idx];
-      
-      free (seg->datasamples);
-      seg->datasamples = ddata;
-      seg->sampletype = 'd';
-    }
-  
+  /* Convert samples to doubles */
   if ( seg->sampletype != 'd' )
     {
-      fprintf (stderr, "procPolynomialM(): Unrecognized sample type: '%c'\n", seg->sampletype);
-      return -1;
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   
   /* Build coefficient string to print */
@@ -1284,42 +1139,16 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
 static int
 procEnvelope (MSTraceSeg *seg, struct proclink *plp)
 {
-  int idx;
   int retval;
-  int32_t *idata = seg->datasamples;
-  float *fdata = seg->datasamples;
-  double *ddata = seg->datasamples;
   
   if ( ! seg || ! plp )
     return -1;
-  
-  /* Convert integer and float samples to doubles */
-  if ( seg->sampletype == 'i' || seg->sampletype == 'f' )
-    {
-      /* Allocate memory for double samples */
-      if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
-	{
-	  fprintf (stderr, "procEnvelope(): Cannot allocate memory\n");
-	  return -1;
-	}
-      
-      /* Convert samples to doubles */
-      if ( seg->sampletype == 'i' )
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) idata[idx];
-      else
-	for (idx = 0; idx < seg->numsamples; idx++)
-	  ddata[idx] = (double) fdata[idx];
-      
-      free (seg->datasamples);
-      seg->datasamples = ddata;
-      seg->sampletype = 'd';
-    }
-  
+
+  /* Convert samples to doubles */
   if ( seg->sampletype != 'd' )
     {
-      fprintf (stderr, "procEnvelope(): Unrecognized sample type: '%c'\n", seg->sampletype);
-      return -1;
+      if ( convertSamples (seg, 'd') )
+	return -1;
     }
   
   addToProcLog ("Calculating envelope of time series");
@@ -3313,6 +3142,153 @@ applyPolynomialM (void *input, char inputtype, int length,
   
   return length;
 } /* End of applyPolynomialM() */
+
+
+/***************************************************************************
+ * convertSamples:
+ *
+ * Convert samples for a specified MSTraceSeg to specified type.
+ *
+ * Returns 0 on success, and -1 on failure
+ ***************************************************************************/
+static int
+convertSamples (MSTraceSeg *seg, char type)
+{
+  int32_t *idata;
+  float *fdata;
+  double *ddata;
+  int64_t idx;
+  
+  if ( ! seg )
+    {
+      fprintf (stderr, "convertSamples: Error, no MSTraceSeg specified!\n");
+      return -1;
+    }
+  
+  idata = (int32_t *) seg->datasamples;
+  fdata = (float *) seg->datasamples;
+  ddata = (double *) seg->datasamples;
+  
+  /* Convert sample type if needed */
+  if ( seg->sampletype != type )
+    {
+      if ( seg->sampletype == 'a' || type == 'a' )
+	{
+	  fprintf (stderr, "Error, cannot convert ASCII samples to/from numeric type\n");
+	  return -1;
+	}
+      
+      /* Convert to integers */
+      else if ( type == 'i' )
+	{
+	  if ( seg->sampletype == 'f' )      /* Convert floats to integers with simple rounding */
+	    {
+	      addToProcLog ("Converting segment samples from floats to integers");
+	      
+	      for (idx = 0; idx < seg->numsamples; idx++)
+		{
+		  /* Check for loss of sub-integer */
+		  if ( (fdata[idx] - (int32_t)fdata[idx]) > 0.000001 )
+		    {
+		      fprintf (stderr, "Warning, Loss of precision when converting floats to integers, loss: %g\n",
+			       (fdata[idx] - (int32_t)fdata[idx]));
+		      return -1;
+		    }
+		  
+		  idata[idx] = (int32_t) (fdata[idx] + 0.5);
+		}
+	    }
+	  else if ( seg->sampletype == 'd' ) /* Convert doubles to integers with simple rounding */
+	    {
+	      addToProcLog ("Converting segment samples from doubles to integers");
+	      
+	      for (idx = 0; idx < seg->numsamples; idx++)
+		{
+		  /* Check for loss of sub-integer */
+		  if ( (ddata[idx] - (int32_t)ddata[idx]) > 0.000001 )
+		    {
+		      fprintf (stderr, "Warning, Loss of precision when converting doubles to integers, loss: %g\n",
+			       (ddata[idx] - (int32_t)ddata[idx]));
+		      return -1;
+		    }
+
+
+		  idata[idx] = (int32_t) (ddata[idx] + 0.5);
+		}
+	      
+	      /* Reallocate buffer for reduced size needed */
+	      if ( realloc (seg->datasamples, (seg->numsamples * sizeof(int32_t))) )
+		{
+		  fprintf (stderr, "Error, cannot re-allocate buffer for sample conversion\n");
+		  return -1;
+		}
+	    }
+	  
+	  seg->sampletype = 'i';
+	}
+      
+      /* Convert to floats */
+      else if ( type == 'f' )
+	{
+	  if ( seg->sampletype == 'i' )      /* Convert integers to floats */
+	    {
+	      addToProcLog ("Converting segment samples from integers to floats");
+	      
+	      for (idx = 0; idx < seg->numsamples; idx++)
+		fdata[idx] = (float) idata[idx];
+	    }
+	  else if ( seg->sampletype == 'd' ) /* Convert doubles to floats */
+	    {
+	      addToProcLog ("Converting segment samples from doubles to floats");
+	      
+	      for (idx = 0; idx < seg->numsamples; idx++)
+		fdata[idx] = (float) ddata[idx];
+	      
+	      /* Reallocate buffer for reduced size needed */
+	      if ( realloc (seg->datasamples, (seg->numsamples * sizeof(float))) )
+		{
+		  fprintf (stderr, "Error, cannot re-allocate buffer for sample conversion\n");
+		  return -1;
+		}
+	    }
+	  
+	  seg->sampletype = 'f';
+	}
+      /* Convert to doubles */
+      else if ( type == 'd' )
+	{
+	  if ( (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
+	    {
+	      fprintf (stderr, "Error, cannot allocate buffer for sample conversion to doubles\n");
+	      return -1;
+	    }
+	  
+	  if ( seg->sampletype == 'i' )      /* Convert integers to doubles */
+	    {
+	      addToProcLog ("Converting segment samples from integers to doubles");
+	      
+	      for (idx = 0; idx < seg->numsamples; idx++)
+		ddata[idx] = (double) idata[idx];
+	      
+	      free (idata);
+	    }
+	  else if ( seg->sampletype == 'f' ) /* Convert floats to doubles */
+	    {
+	      addToProcLog ("Converting segment samples from floats to doubles");
+	      
+	      for (idx = 0; idx < seg->numsamples; idx++)
+		ddata[idx] = (double) fdata[idx];
+	      
+	      free (fdata);
+	    }
+	  
+	  seg->datasamples = ddata;
+	  seg->sampletype = 'd';
+	}
+    }
+  
+  return 0;
+}  /* End of convertSamples() */
 
 
 /***************************************************************************
