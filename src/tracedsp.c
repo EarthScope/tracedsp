@@ -33,7 +33,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.5dev"
+#define VERSION "0.9.5"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
