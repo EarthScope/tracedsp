@@ -1,6 +1,7 @@
-2012.098:
+2012.102: 0.9.5
 	- Change all internal sample conversions to default to converting to
-	doubles.
+	doubles.  A few specific operations can be done as floats but in general
+	doubles are used for most operations.
 	- Convert iirfilter complex number operations to use common routines
 	in complex.h.
 

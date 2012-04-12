@@ -63,17 +63,17 @@
 /* 2-dimensional rotation
  *
  * parameter of routine
- * SAMPLE    *n, *e;      input; north & east component
+ * double    *n, *e;      input; north & east component
  * long      lth;         input; length of input & output traces
- * REAL      angle;       input; rotation angle
- * SAMPLE    *r, *t;      output; rotated traces
+ * double    angle;       input; rotation angle
+ * double    *r, *t;      output; rotated traces
  */
 void
-mt_rot2 ( SAMPLE *n, SAMPLE *e, long lth, REAL angle,
-	  SAMPLE *r, SAMPLE *t )
+rotate2 ( double *n, double *e, long lth, double angle,
+	  double *r, double *t )
 {
-  REAL  ann, ane, aen, aee;  /* rotation matrix */
-  long  i;                   /* counter */
+  double ann, ane, aen, aee;  /* rotation matrix */
+  long  i;                    /* counter */
   
   /* Determine rotation matrix */
   angle *= (PI / 180.0);
@@ -90,27 +90,27 @@ mt_rot2 ( SAMPLE *n, SAMPLE *e, long lth, REAL angle,
       e++; n++;
     }
   
-} /* End of mt_rot2 */
+} /* End of rotate2 */
 
 
 /* 3-dimensional rotation
  *
  * parameter of routine
- * SAMPLE    *z, *n, *e;  input; vertical, north & east component
+ * double    *z, *n, *e;  input; vertical, north & east component
  * long      lth;         input; length of input & output traces
- * REAL      azim, inci;  input; rotation angles
+ * double    azim, inci;  input; rotation angles
  * int       type;        input; type of rotation
- * SAMPLE    *l, *q, *t;  output; rotated traces
+ * double    *l, *q, *t;  output; rotated traces
  */
 void
-mt_rot3 ( SAMPLE *z, SAMPLE *n, SAMPLE *e, long lth,
-	  REAL azim, REAL inci, int type,
-	  SAMPLE *l, SAMPLE *q, SAMPLE *t )
+rotate3 ( double *z, double *n, double *e, long lth,
+	  double azim, double inci, int type,
+	  double *l, double *q, double *t )
 {
-  REAL  azz, azn, aze;  /* rotation matrix */
-  REAL  anz, ann, ane;
-  REAL  aez, aen, aee;
-  REAL  cosi, cosa, sini, sina;
+  double  azz, azn, aze;  /* rotation matrix */
+  double  anz, ann, ane;
+  double  aez, aen, aee;
+  double  cosi, cosa, sini, sina;
   long  i;                   /* counter */
   
   /* Determine rotation matrix */
@@ -168,4 +168,4 @@ mt_rot3 ( SAMPLE *z, SAMPLE *n, SAMPLE *e, long lth,
       z++; n++; e++;
     }
   
-} /* End of mt_rot3 */
+} /* End of rotate3 */

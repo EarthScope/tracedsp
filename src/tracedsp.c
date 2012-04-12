@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.098
+ * modified 2012.102
  ***************************************************************************/
 
 // Add rotation code and options
@@ -1897,12 +1897,7 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
   FILE *ofp = 0;
   int64_t packedsamples = 0;
   int packedrecords = 0;
-  int idx;
-  
-  int32_t *idata;
-  float *fdata;
-  double *ddata;
-  
+    
   /* Determine file open mode:
    * If bytes have already been written: append
    * If nothing has been written: overwrite */
@@ -1913,6 +1908,46 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
   
   if ( seg->numsamples <= 0 || seg->samprate == 0.0 )
     return 0;
+  
+  /* Convert data buffer and type depending on encoding format */
+  if ( packencoding == 3 || packencoding == 10 || packencoding == 11 ) /* 32-bit integers */
+    {
+      if ( convertSamples (seg, 'i') )
+	return -1;
+      
+      if ( seg->sampletype != 'i' )
+	{
+	  fprintf (stderr, "writeMSEED(): Unsupported sample type: %c\n", seg->sampletype);
+	  return -1;
+	}
+    }
+  else if ( packencoding == 4 ) /* 32-bit floats */
+    {
+      if ( convertSamples (seg, 'f') )
+	return -1;      
+      
+      if ( seg->sampletype != 'f' )
+	{
+	  fprintf (stderr, "writeMSEED(): Unsupported sample type: %c\n", seg->sampletype);
+	  return -1;
+	}
+    }
+  else if ( packencoding == 5 ) /* 64-bit floats */
+    {
+      if ( convertSamples (seg, 'd') )
+	return -1;
+      
+      if ( seg->sampletype != 'd' )
+	{
+	  fprintf (stderr, "writeMSEED(): Unsupported sample type: %c\n", seg->sampletype);
+	  return -1;
+	}
+    }
+  else
+    {
+      fprintf (stderr, "Unrecognized encoding format: %d\n", packencoding);
+      return -1;
+    }
   
   /* Populate MSTrace used for packing */
   mst = mst_init (NULL);
@@ -1967,127 +2002,6 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
     {
       fprintf (stderr, "Cannot open output file: %s (%s)\n",
 	       outfile, strerror(errno));
-      return -1;
-    }
-  
-  /* Convert data buffer and set the data type depending on encoding format */
-  if ( packencoding == 3 || packencoding == 10 || packencoding == 11 )
-    {
-      /* Use the same buffer (ints being equal to floats and smaller than doubles) */      
-      idata = (int32_t *) mst->datasamples;
-      
-      if ( mst->sampletype == 'f' )
-	{
-	  if ( verbose )
-	    fprintf (stderr, "Converting (truncating) floats to integer for Mini-SEED\n");
-	  
-	  fdata = (float *) mst->datasamples;
-	  for (idx=0; idx < mst->numsamples; idx++)
-	    idata[idx] = (int) fdata[idx];
-	}
-      else if ( mst->sampletype == 'd' )
-	{
-	  if ( verbose )
-	    fprintf (stderr, "Converting (truncating) doubles to integer for Mini-SEED\n");
-	  
-	  ddata = (double *) mst->datasamples;
-	  for (idx=0; idx < mst->numsamples; idx++)
-	    idata[idx] = (int) ddata[idx];
-	}
-      else if ( mst->sampletype != 'i' )
-	{
-	  fprintf (stderr, "writeMSEED(): Unsupported sample type: %c\n", mst->sampletype);
-	  return -1;
-	}
-      
-      mst->sampletype = seg->sampletype = 'i';
-    }
-  else if ( packencoding == 4 ) /* 32-bit floats */
-    {
-      /* Use the same buffer (floats being equal to ints and smaller than doubles) */
-      fdata = (float *) mst->datasamples;
-      
-      if ( mst->sampletype == 'i' )
-	{
-	  if ( verbose )
-	    fprintf (stderr, "Converting integer to float for Mini-SEED\n");
-	  
-	  idata = (int32_t *) mst->datasamples;
-	  for (idx=0; idx < mst->numsamples; idx++)
-	    fdata[idx] = (float) idata[idx];
-	}
-      else if ( mst->sampletype == 'd' )
-	{
-	  if ( verbose )
-	    fprintf (stderr, "Converting double to float for Mini-SEED\n");
-	  
-	  ddata = (double *) mst->datasamples;
-	  for (idx=0; idx < mst->numsamples; idx++)
-	    fdata[idx] = (float) ddata[idx];
-	}
-      else if ( mst->sampletype != 'f' )
-	{
-	  fprintf (stderr, "writeMSEED(): Unsupported sample type: %c\n", mst->sampletype);
-	  return -1;
-	}
-      
-      mst->sampletype = seg->sampletype = 'f';
-    }
-  else if ( packencoding == 5 ) /* 64-bit floats */
-    {
-      if ( mst->sampletype == 'i' )
-	{
-	  if ( verbose )
-	    fprintf (stderr, "Converting integer to double for Mini-SEED\n");
-	  
-	  /* Allocate new array of doubles */
-	  if ( (ddata = (double *) malloc (sizeof(double) * mst->numsamples)) == NULL )
-	    {
-	      fprintf (stderr, "Error allocating memory\n");
-	      return -1;
-	    }
-	  
-	  idata = (int32_t *) mst->datasamples;
-	  for (idx=0; idx < mst->numsamples; idx++)
-	    ddata[idx] = (double) idata[idx];
-	  
-	  /* Free earlier buffer and replace with new array of doubles */
-	  if ( mst->datasamples )
-	    free (mst->datasamples);
-	  mst->datasamples = seg->datasamples = ddata;
-	}
-      else if ( mst->sampletype == 'f' )
-	{
-	  if ( verbose )
-	    fprintf (stderr, "Converting float to double for Mini-SEED\n");
-	  
-	  /* Allocate new array of doubles */
-	  if ( (ddata = (double *) malloc (sizeof(double) * mst->numsamples)) == NULL )
-	    {
-	      fprintf (stderr, "Error allocating memory\n");
-	      return -1;
-	    }
-	  
-	  fdata = (float *) mst->datasamples;
-	  for (idx=0; idx < mst->numsamples; idx++)
-	    ddata[idx] = (double) fdata[idx];
-
-	  /* Free earlier buffer and replace with new array of doubles */
-	  if ( mst->datasamples )
-	    free (mst->datasamples);
-	  mst->datasamples = seg->datasamples = ddata;
-	}
-      else if ( mst->sampletype != 'd' )
-	{
-	  fprintf (stderr, "writeMSEED(): Unsupported sample type: %c\n", mst->sampletype);
-	  return -1;
-	}
-      
-      mst->sampletype = seg->sampletype = 'd';
-    }
-  else
-    {
-      fprintf (stderr, "Unrecognized encoding format: %d\n", packencoding);
       return -1;
     }
   
@@ -2146,8 +2060,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
   char sacchannel[11];
   
   float *fdata = 0;
-  double *ddata = 0;
-  int32_t *idata = 0;
+
   hptime_t submsec;
   int idx;
   
@@ -2243,77 +2156,30 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
    * idep  : type of amplitude
    */ 
   
-  /* Convert data buffer to floats */
-  if ( seg->sampletype == 'f' )
+  /* Convert samples to floats */
+  if ( seg->sampletype != 'f' )
     {
-      fdata = (float *) seg->datasamples;
-      
-      /* Determine minimum and maximum sample values */
-      sh.depmin = *fdata;
-      sh.depmax = *fdata;
-      for (idx=1; idx < seg->numsamples; idx++)
-	{
-	  if ( fdata[idx] < sh.depmin )
-	    sh.depmin = fdata[idx];
-	  if ( fdata[idx] > sh.depmax )
-	    sh.depmax = fdata[idx];
-	}
+      if ( convertSamples (seg, 'f') )
+	return -1;
     }
-  else if ( seg->sampletype == 'i' )
+  
+  if ( seg->sampletype != 'f' )
     {
-      idata = (int32_t *) seg->datasamples;
-      
-      fdata = (float *) malloc (seg->numsamples * sizeof(float));
-
-      if ( fdata == NULL )
-	{
-	  fprintf (stderr, "Error allocating memory\n");
-	  return -1;
-	}
-      
-      /* Populate array of float samples and determine min and max */
-      sh.depmin = *idata;
-      sh.depmax = *idata;
-      for (idx=0; idx < seg->numsamples; idx++)
-	{
-	  fdata[idx] = (float) idata[idx];
-	  
-	  if ( fdata[idx] < sh.depmin )
-	    sh.depmin = fdata[idx];
-	  if ( fdata[idx] > sh.depmax )
-	    sh.depmax = fdata[idx];
-	}
-    }
-  else if ( seg->sampletype == 'd' )
-    {
-      ddata = (double *) seg->datasamples;
-      
-      fdata = (float *) malloc (seg->numsamples * sizeof(float));
-      
-      if ( fdata == NULL )
-	{
-	  fprintf (stderr, "Error allocating memory\n");
-	  return -1;
-	}
-      
-      /* Populate array of float samples and determine min and max */
-      sh.depmin = *ddata;
-      sh.depmax = *ddata;
-      for (idx=0; idx < seg->numsamples; idx++)
-	{
-	  fdata[idx] = (float) ddata[idx];
-	  
-	  if ( fdata[idx] < sh.depmin )
-	    sh.depmin = fdata[idx];
-	  if ( fdata[idx] > sh.depmax )
-	    sh.depmax = fdata[idx];
-	}
-    }
-  else
-    {
-      fprintf (stderr, "Error, unrecognized sample type: '%c'\n",
-	       seg->sampletype);
+      fprintf (stderr, "writeSAC: Unusable sample type: %c\n", seg->sampletype);
       return -1;
+    }
+  
+  fdata = (float *) seg->datasamples;
+  
+  /* Determine minimum and maximum sample values */
+  sh.depmin = *fdata;
+  sh.depmax = *fdata;
+  for (idx=1; idx < seg->numsamples; idx++)
+    {
+      if ( fdata[idx] < sh.depmin )
+	sh.depmin = fdata[idx];
+      if ( fdata[idx] > sh.depmax )
+	sh.depmax = fdata[idx];
     }
   
   if ( format >= 2 && format <= 4 )
@@ -2391,10 +2257,6 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
     {
       fprintf (stderr, "Error, unrecognized SAC format: '%d'\n", format);
     }
-  
-  /* Free any buffer allocated by this routine */
-  if ( fdata && seg->sampletype != 'f' )
-    free (fdata);
   
   if ( verbose )
     fprintf (stderr, "Wrote %lld samples to %s (%d bytes)\n",
@@ -3217,7 +3079,7 @@ convertSamples (MSTraceSeg *seg, char type)
 		}
 	      
 	      /* Reallocate buffer for reduced size needed */
-	      if ( realloc (seg->datasamples, (seg->numsamples * sizeof(int32_t))) )
+	      if ( ! (seg->datasamples = realloc (seg->datasamples, (seg->numsamples * sizeof(int32_t)))) )
 		{
 		  fprintf (stderr, "Error, cannot re-allocate buffer for sample conversion\n");
 		  return -1;
@@ -3245,7 +3107,7 @@ convertSamples (MSTraceSeg *seg, char type)
 		fdata[idx] = (float) ddata[idx];
 	      
 	      /* Reallocate buffer for reduced size needed */
-	      if ( realloc (seg->datasamples, (seg->numsamples * sizeof(float))) )
+	      if ( ! (seg->datasamples = realloc (seg->datasamples, (seg->numsamples * sizeof(float)))) )
 		{
 		  fprintf (stderr, "Error, cannot re-allocate buffer for sample conversion\n");
 		  return -1;
@@ -3257,7 +3119,7 @@ convertSamples (MSTraceSeg *seg, char type)
       /* Convert to doubles */
       else if ( type == 'd' )
 	{
-	  if ( (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
+	  if ( ! (ddata = (double *) malloc (seg->numsamples * sizeof(double))) )
 	    {
 	      fprintf (stderr, "Error, cannot allocate buffer for sample conversion to doubles\n");
 	      return -1;

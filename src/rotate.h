@@ -12,15 +12,11 @@ extern "C" {
 #define ROT_ZNE_TO_UVW 1
 #define ROT_UVW_TO_ZNE 2
 
-/* Define data types */
-#define SAMPLE float
-#define REAL double
-
-void mt_rot2 ( SAMPLE *n, SAMPLE *e, long lth, REAL angle,
-	       SAMPLE *r, SAMPLE *t );
-void mt_rot3 ( SAMPLE *z, SAMPLE *n, SAMPLE *e, long lth,
-	       REAL azim, REAL inci, int type,
-	       SAMPLE *l, SAMPLE *q, SAMPLE *t );
+void rotate2 ( double *n, double *e, long lth, double angle,
+	       double *r, double *t );
+void rotate3 ( double *z, double *n, double *e, long lth,
+	       double azim, double inci, int type,
+	       double *l, double *q, double *t );
 
 #ifdef __cplusplus
 }
