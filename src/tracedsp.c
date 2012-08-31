@@ -33,7 +33,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.5"
+#define VERSION "0.9.6dev"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -61,6 +61,9 @@ struct proclink {
   int     tapertype;
   double *coefficients;
   int     coefficientcount;
+  char    rotateZNE[3];  /* Component names for Z,N,E */
+  char    rotatedZNE[3]; /* Final component names */
+  double  rotations[2];  /* 0: Azimuth, 1: Incicent angle */
   struct proclink *next;
 };
 
@@ -82,6 +85,7 @@ struct proclink {
 #define PROC_POLYNOMIALM 16
 #define PROC_ENVELOPE    17
 #define PROC_DATATRIM    18
+#define PROC_ROTATE      19
 
 
 /* Maximum processing log size in bytes, 10 MB */
@@ -118,6 +122,7 @@ static int procTaper (MSTraceSeg *seg, struct proclink *plp);
 static int procPolynomialM (MSTraceSeg *seg, struct proclink *plp);
 static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
 static int procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
+static int procRotate (MSTraceSeg *seg, struct proclink *plp);
 
 static int64_t readMSEED (char *mseedfile, MSTraceList *mstl);
 static int64_t readSAC (char *sacfile, MSTraceList *mstl);
@@ -435,6 +440,16 @@ main (int argc, char **argv)
 		  if ( procDataTrim (seg, lateststart, earliestend) )
 		    {
 		      fprintf (stderr, "Error synchronizing time series windows %s\n",
+			       id->srcname);
+		      errflag = -1;
+		      break;
+		    }
+		}
+	      else if ( plp->type == PROC_ROTATE )
+		{
+		  if ( procRotate (seg, plp) )
+		    {
+		      fprintf (stderr, "Error rotating time series %s\n",
 			       id->srcname);
 		      errflag = -1;
 		      break;
@@ -1245,6 +1260,47 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
   
   return 0;
 }  /* End of procDataTrim() */
+
+
+/***************************************************************************
+ * procRotate:
+ *
+ * Rotate seismogram sets.
+ *
+ * Returns 0 on success and non-zero on error.
+ ***************************************************************************/
+static int
+procRotate (MSTraceSeg *seg, struct proclink *plp)
+{
+  int retval = 0;
+  
+  if ( ! seg || ! plp )
+    return -1;
+
+  /* Convert samples to doubles */
+  if ( seg->sampletype != 'd' )
+    {
+      if ( convertSamples (seg, 'd') )
+	return -1;
+    }
+  
+  addToProcLog ("Rotating time series sets");
+
+  // Need to find trace sets that have same sampling rate and matching components.
+
+  //DEBUG
+  fprintf (stderr, "Rotate: %c, %c, %c\n", plp->rotateZNE[0], plp->rotateZNE[1], plp->rotateZNE[2]);
+  fprintf (stderr, "Rotated: %c, %c, %c\n", plp->rotatedZNE[0], plp->rotatedZNE[1], plp->rotatedZNE[2]);
+  fprintf (stderr, "Rotations: %g, %g\n", plp->rotations[0], plp->rotations[1]);
+    
+  if ( retval < 0 )
+    {
+      fprintf (stderr, "procRotate(): Error caluclating envelope of time series\n");
+      return -1;      
+    }
+  
+  return 0;
+}  /* End of procRotate() */
 
 
 /***************************************************************************
@@ -3450,6 +3506,32 @@ parameterProc (int argcount, char **argvec)
         {
 	  addProcess (PROC_DATATRIM, NULL, NULL, 0, 0, 0.0, 0.0);
         }
+      else if (strcmp (argvec[optind], "-ROTATE") == 0)
+        {
+	  /* -ROTATE "Z/1,N/2,E/3:azimuth,incidence" */
+
+	  char *components = getOptVal(argcount, argvec, optind++, 0);
+	  char *angles = strchr (components, ':');
+	  double azimuth = 0.0;
+	  double incidence = 0.0;
+	  
+	  /* Parse the azimuth and incidence angles */
+	  if ( angles )
+	    *angles++ ='\0';
+	  
+	  tptr = strchr (angles, ',');
+	  
+	  if ( tptr )
+	    {
+	      *tptr++ ='\0';
+	      incidence = strtod (tptr, NULL);
+	    }
+	  
+	  azimuth = strtod (angles, NULL);
+	  
+	  /* The components will be parsed in addProcess */
+	  addProcess (PROC_ROTATE, components, NULL, 0, 0, azimuth, incidence);
+        }
       else if (strcmp (argvec[optind], "-STATS") == 0)
         {
 	  addProcess (PROC_STATS, NULL, NULL, 0, 0, 0.0, 0.0);
@@ -4042,8 +4124,10 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
   double taperwidth = 0.0;
   double *coefficients = NULL;
   int coefficientcount = 0;
+  char rotateZNE[3] = {'\0','\0','\0'};
+  char rotatedZNE[3] = {'\0','\0','\0'};
+  double rotations[2] = {0.0, 0.0};
   
-
   /* (De)Convolution */
   if ( type == PROC_CONVOLVE )
     {
@@ -4208,6 +4292,46 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
 	    tptr++;
 	}
     }
+
+  /* Rotation */
+  if ( type == PROC_ROTATE )
+    {
+      /* string1 == Z/L,N/Q,E/T */
+      /* dvalue1 == azimuth */
+      /* dvalue2 == incidence */
+      int idx;
+      
+      /* Parse component codes
+       * This should be a string of comma-separated, single-character representing
+       * the Z, N and E components, regardless of their actual codes.  Each code
+       * may optionally be follow by a / and another code represting the code that
+       * should be used for the resulting segment.
+       * 
+       * Examples:
+       *   "Z,N,E"
+       *   "Z,1,2"
+       *   "Z/L,1/Q,2/T"
+       *   "Z,N/R,E/T"
+       */
+      tptr = string1;
+      for (idx=0; tptr && idx < 3; idx++)
+	{
+	  rotateZNE[idx] = tptr[0];
+	  
+	  if ( strlen(tptr) >= 2 )
+	    {
+	      if ( tptr[1] == '/' )
+		rotatedZNE[idx] = tptr[2];
+	    }
+	  
+	  if ( (tptr = strchr(tptr, ',')) )
+	    tptr++;
+	}
+      
+      /* Set azimuth and incidence */
+      rotations[0] = dvalue1;
+      rotations[1] = dvalue2;
+    }
   
   /* Find last process in list */
   lastlp = proclist;
@@ -4263,6 +4387,15 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       newlp->taperwidth = taperwidth;
       newlp->coefficients = coefficients;
       newlp->coefficientcount = coefficientcount;
+      newlp->rotateZNE[0] = rotateZNE[0];
+      newlp->rotateZNE[1] = rotateZNE[1];
+      newlp->rotateZNE[2] = rotateZNE[2];
+      newlp->rotatedZNE[0] = rotatedZNE[0];
+      newlp->rotatedZNE[1] = rotatedZNE[1];
+      newlp->rotatedZNE[2] = rotatedZNE[2];
+      newlp->rotations[0] = rotations[0];
+      newlp->rotations[1] = rotations[1];
+      
       newlp->next = 0;
       
       if ( lastlp == 0 )
@@ -4367,6 +4500,8 @@ usage (void)
 	   " -POLYM c1,c2,...   Apply a Maclaurin type polynomial with given coefficients\n"
 	   " -ENV          Calculate envelope of time series\n"
 	   " -DTRIM        Trim time series to latest start and earliest end\n"
+	   " -ROTATE Z,N,E:azimuth,incidence\n"
+	   "                 Rotate components sets\n"
 	   " -STATS        Add simple stats to processing log, verbose to print\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
