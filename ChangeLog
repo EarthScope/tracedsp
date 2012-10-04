@@ -1,3 +1,14 @@
+2012.249:
+	- Add -ROTATE operation to perform 2-D and 3-D component set rotations.
+
+2012.248:
+	- Reorganize to handle multi-channel operations:
+	  * Loop through operations and apply to each segment instead of
+	    looping through segments and applying each operation.  This
+	    retains the order for multi-channel operations.
+	  * Write traces after all operations have been performed
+	  * Add a segment details struct to each segment to store extra stuff
+
 2012.102: 0.9.5
 	- Change all internal sample conversions to default to converting to
 	doubles.  A few specific operations can be done as floats but in general

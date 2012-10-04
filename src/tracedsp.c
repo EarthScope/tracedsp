@@ -6,14 +6,14 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.102
+ * modified 2012.249
  ***************************************************************************/
-
-// Add rotation code and options
 
 // Add resampling process
 
 // Add option to fill gaps under specified length with zeros
+
+// Change SAC header orientation values after rotation
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +33,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.6dev"
+#define VERSION "0.9.6+2012.249"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -61,10 +61,17 @@ struct proclink {
   int     tapertype;
   double *coefficients;
   int     coefficientcount;
-  char    rotateZNE[3];  /* Component names for Z,N,E */
-  char    rotatedZNE[3]; /* Final component names */
+  char    rotateENZ[3];  /* Component names for Z,N,E */
+  char    rotatedENZ[3]; /* Final component names */
   double  rotations[2];  /* 0: Azimuth, 1: Incicent angle */
   struct proclink *next;
+};
+
+/* Additional segment details, stored at MSTraceSeg->prvtptr  */
+struct segdetails {
+  struct SACHeader *sacheader;
+  int procerror;
+  int rotated;
 };
 
 #define PROC_STATS       1
@@ -86,7 +93,6 @@ struct proclink {
 #define PROC_ENVELOPE    17
 #define PROC_DATATRIM    18
 #define PROC_ROTATE      19
-
 
 /* Maximum processing log size in bytes, 10 MB */
 #define MAXPROCLOG 10485760
@@ -122,7 +128,7 @@ static int procTaper (MSTraceSeg *seg, struct proclink *plp);
 static int procPolynomialM (MSTraceSeg *seg, struct proclink *plp);
 static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
 static int procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
-static int procRotate (MSTraceSeg *seg, struct proclink *plp);
+static int procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp);
 
 static int64_t readMSEED (char *mseedfile, MSTraceList *mstl);
 static int64_t readSAC (char *sacfile, MSTraceList *mstl);
@@ -164,6 +170,8 @@ static int addFile (char *filename);
 static int addListFile (char *filename);
 static void addProcess (int type, char *string1, char *string2, int ivalue1,
 			int ivalue2, double dvalue1, double dvalue2);
+static char *procDescription (int proctype);
+
 static void recordHandler (char *record, int reclen, void *vofp);
 static void usage (void);
 
@@ -308,24 +316,20 @@ main (int argc, char **argv)
       id = id->next;
     }
   
-  /* Loop through all read MSTraceIDs, apply processing and write resulting data */
-  id = mstl->traces;
-  while ( id )
+  /* Loop through process list, apply to each time series segment */
+  plp = proclist;
+  while ( plp && ! errflag )
     {
-      seg = id->first;
-      while ( seg )
+      id = mstl->traces;
+      while ( id )
 	{
-	  if ( proclist )
+	  seg = id->first;
+	  while ( seg )
 	    {
 	      ms_hptime2seedtimestr (seg->starttime, stime, 1);
 	      ms_hptime2seedtimestr (seg->endtime, etime, 1);
-	      addToProcLog ("Processing %s (%s - %s)", id->srcname, stime, etime);
-	    }
-	  
-	  /* Loop through process list */
-	  plp = proclist;
-	  while ( plp && ! errflag )
-	    {
+	      addToProcLog ("Processing %s (%s - %s): %s", id->srcname, stime, etime, procDescription(plp->type));
+	      
 	      if ( plp->type == PROC_STATS )
 		{
 		  if ( calcStats (seg->datasamples, seg->sampletype, seg->numsamples) )
@@ -447,38 +451,53 @@ main (int argc, char **argv)
 		}
 	      else if ( plp->type == PROC_ROTATE )
 		{
-		  if ( procRotate (seg, plp) )
-		    {
-		      fprintf (stderr, "Error rotating time series %s\n",
-			       id->srcname);
-		      errflag = -1;
-		      break;
-		    }
+		  if ( ! ((struct segdetails *)(seg->prvtptr))->rotated )
+		    if ( procRotate (id, seg, plp) < 0 )
+		      {
+			fprintf (stderr, "Error rotating time series %s\n",
+				 id->srcname);
+			errflag = -1;
+			break;
+		      }
 		}
 	      
-	      plp = plp->next;
+	      ((struct segdetails *)seg->prvtptr)->procerror = errflag;
+	      
+	      seg = seg->next;
 	    }
 	  
-	  /* If no processing errors occurred write the data out */
-	  if ( ! errflag )
+	  id = id->next;
+	}
+      
+      plp = plp->next;
+    }
+  
+  /* Write each segment with no processing errors */
+  id = mstl->traces;
+  while ( id )
+    {
+      seg = id->first;
+      while ( seg )
+	{
+	  if ( ! ((struct segdetails *)seg->prvtptr)->procerror )
 	    {
-	      /* Write Mini-SEED data */
+	      ms_hptime2seedtimestr (seg->starttime, stime, 1);
+	      ms_hptime2seedtimestr (seg->endtime, etime, 1);
+	      addToProcLog ("Writing %s (%s - %s)", id->srcname, stime, etime);
+	      
 	      if ( dataformat == 1 )
 		{
 		  if ( writeMSEED (id, seg, outputfile) < 0 )
 		    fprintf (stderr, "Error writing Mini-SEED\n");
 		}
-	      /* Write SAC data */
 	      else if ( dataformat == 2 )
 		{
 		  if ( writeSAC (id, seg, sacoutformat, outputfile) < 0 )
 		    fprintf (stderr, "Error writing SAC\n");
 		}
 	    }
-	  
 	  seg = seg->next;
 	}
-      
       id = id->next;
     }
   
@@ -1267,35 +1286,194 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
  *
  * Rotate seismogram sets.
  *
- * Returns 0 on success and non-zero on error.
+ * Returns the number of segments rotated, 0 on no operation and negative on error.
  ***************************************************************************/
 static int
-procRotate (MSTraceSeg *seg, struct proclink *plp)
+procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 {
+  MSTraceID *id = NULL;
+  MSTraceID *ENZid[3] = {NULL,NULL,NULL};
+  
+  MSTraceSeg *seg = NULL;
+  MSTraceSeg *ENZseg[3] = {NULL,NULL,NULL};
+  
+  hptime_t hptimetol;
+  char stime[50];
+  char etime[50];
+  char tsname[50];
+  char *cptr = NULL;
+  int snlength = 0;
+  int idx;
   int retval = 0;
   
-  if ( ! seg || ! plp )
+  if ( ! tid || ! tseg || ! plp )
     return -1;
-
-  /* Convert samples to doubles */
-  if ( seg->sampletype != 'd' )
+  
+  /* Cannot rotate data without coverage */
+  if ( ! tseg->samprate || ! tseg->numsamples )
+    return 0;
+  
+  /* Target ID source name: Net_Sta_Loc_Chan */
+  snlength = snprintf (tsname, sizeof(tsname), "%s_%s_%s_%s",
+		    tid->network, tid->station, tid->location, tid->channel);
+  
+  if ( snlength <= 0 )
+    return -1;
+  
+  /* Identify MSTraceID's that match the requested set of components to rotate */
+  id = tid;
+  do
     {
-      if ( convertSamples (seg, 'd') )
-	return -1;
+      /* Test for base source name match, ignore last channel character */
+      if ( strncmp (id->srcname, tsname, snlength-1) )
+	{
+	  id = id->next;
+	  continue;
+	}
+      
+      cptr = &(id->srcname[snlength-1]);
+      
+      if ( *cptr == plp->rotateENZ[0] )
+	ENZid[0] = id;
+      else if ( *cptr == plp->rotateENZ[1] )
+	ENZid[1] = id;
+      else if ( *cptr == plp->rotateENZ[2] )
+	ENZid[2] = id;
+      
+      id = id->next;
+    } while ( id );
+  
+  /* Check that an appropriate channel set was found for requested 3-D or 2-D rotation */
+  if ( plp->rotations[1] && ( ! ENZid[0] || ! ENZid[1] || ! ENZid[2] ) )
+    {
+      if ( verbose )
+	fprintf (stderr, "Cannot find 3-D rotation channel set for %.*s, components %c, %c, %c\n",
+		 snlength-1, tsname, plp->rotateENZ[0], plp->rotateENZ[1], plp->rotateENZ[2]);
+      return 0;
+    }
+  if ( plp->rotations[0] && ( ! ENZid[0] || ! ENZid[1] ) )
+    {
+      if ( verbose )
+	fprintf (stderr, "Cannot find 2-D rotation channel set for %.*s, components %c, %c\n",
+		 snlength-1, tsname, plp->rotateENZ[0], plp->rotateENZ[1]);
+      return 0;
     }
   
-  addToProcLog ("Rotating time series sets");
-
-  // Need to find trace sets that have same sampling rate and matching components.
-
-  //DEBUG
-  fprintf (stderr, "Rotate: %c, %c, %c\n", plp->rotateZNE[0], plp->rotateZNE[1], plp->rotateZNE[2]);
-  fprintf (stderr, "Rotated: %c, %c, %c\n", plp->rotatedZNE[0], plp->rotatedZNE[1], plp->rotatedZNE[2]);
-  fprintf (stderr, "Rotations: %g, %g\n", plp->rotations[0], plp->rotations[1]);
-    
+  /* Determine time toleranace, as 1/2 sample period, in high precision time ticks */
+  hptimetol = ( tseg->samprate ) ? (hptime_t) (HPTMODULUS / (2 * tseg->samprate)) : 0;
+  
+  /* Search for segments in each component group that match the target segment
+   * in both time, sample count and sample rate */
+  for ( idx = 0; idx < 3; idx++ )
+    {
+      if ( ENZid[idx] == tid )
+	{
+	  ENZseg[idx] = tseg;
+	}
+      else if ( ENZid[idx] )
+	{
+	  for ( seg = ENZid[idx]->first; seg; seg = seg->next )
+	    {
+	      if ( (seg->starttime <= (tseg->starttime + hptimetol) && seg->starttime >= (tseg->starttime - hptimetol)) &&
+		   (seg->endtime <= (tseg->endtime + hptimetol) && seg->endtime >= (tseg->endtime - hptimetol)) )
+		{
+		  if ( MS_ISRATETOLERABLE (seg->samprate, tseg->samprate) )
+		    if ( seg->numsamples == tseg->numsamples )
+		      ENZseg[idx] = seg;
+		}
+	    }
+	}
+    }
+  
+  /* Check that an appropriate segment set was found for requested 3-D or 2-D rotation */
+  if ( plp->rotations[1] && ( ! ENZseg[0] || ! ENZseg[1] || ! ENZseg[2] ) )
+    {
+      if ( verbose )
+	{
+	  ms_hptime2seedtimestr (tseg->starttime, stime, 1);
+	  ms_hptime2seedtimestr (tseg->endtime, etime, 1);
+	  fprintf (stderr, "Cannot find 3-D rotation segment set matching %s (%s - %s)\n",
+		   tid->srcname, stime, etime);
+	}
+      return 0;
+    }
+  if ( plp->rotations[0] && ( ! ENZseg[0] || ! ENZseg[1] ) )
+    {
+      if ( verbose )
+	{
+	  ms_hptime2seedtimestr (tseg->starttime, stime, 1);
+	  ms_hptime2seedtimestr (tseg->endtime, etime, 1);
+	  fprintf (stderr, "Cannot find 2-D rotation segment set matching %s (%s - %s)\n",
+		   tid->srcname, stime, etime);
+	}
+      return 0;
+    }
+  
+  if ( plp->rotations[1] )
+    addToProcLog ("Rotating 3-D channel set %.*s, components %c,%c,%c (azimuth: %g, incidence: %g)",
+		  snlength-1, tsname, plp->rotateENZ[0], plp->rotateENZ[1], plp->rotateENZ[2],
+		  plp->rotations[0], plp->rotations[1]);
+  else
+    addToProcLog ("Rotating 2-D channel set %.*s, components %c,%c (azimuth: %g)",
+		  snlength-1, tsname, plp->rotateENZ[0], plp->rotateENZ[1],
+		  plp->rotations[0]);
+  
+  /* Convert samples to doubles */
+  for ( idx = 0; idx < 3; idx++ )
+    {
+      if ( ENZseg[idx] )
+	{
+	  if ( ENZseg[idx]->sampletype != 'd' )
+	    {
+	      if ( convertSamples (ENZseg[idx], 'd') )
+		return -1;
+	    }
+	}
+    }
+  
+  /* Perform 3-D or 2-D rotation */
+  if ( plp->rotations[1] )
+    rotate3 (ENZseg[2]->datasamples, ENZseg[1]->datasamples, ENZseg[0]->datasamples,
+	     tseg->numsamples,
+	     plp->rotations[0], plp->rotations[1],
+	     ROT_ZNE_TO_LQT,
+	     ENZseg[2]->datasamples, ENZseg[1]->datasamples, ENZseg[0]->datasamples);
+  else
+    rotate2 (ENZseg[1]->datasamples, ENZseg[0]->datasamples,
+	     tseg->numsamples,
+	     plp->rotations[0],
+	     ENZseg[1]->datasamples, ENZseg[0]->datasamples);
+  
+  /* Rename channel orientation codes and mark as rotated */
+  for ( idx = 0; idx < 3; idx++ )
+    {
+      if ( ! ENZid[idx] )
+	continue;
+      
+      if ( plp->rotatedENZ[idx] )
+	{
+	  if ( (cptr = strrchr (ENZid[idx]->channel, plp->rotateENZ[idx])) )
+	    *cptr = plp->rotatedENZ[idx];
+	}
+      
+      if ( ENZseg[idx] && ENZseg[idx]->prvtptr )
+	{
+	  struct segdetails *sd = (struct segdetails *)ENZseg[idx]->prvtptr;
+	  
+	  sd->rotated = 1;
+	  
+	  /* Rename orientation code in SAC header if present */
+	  if ( plp->rotatedENZ[idx] && sd->sacheader )
+	    {
+	      if ( (cptr = strrchr (sd->sacheader->kcmpnm, plp->rotatedENZ[idx])) )
+		*cptr = plp->rotatedENZ[idx];
+	    }
+	}
+    }
+  
   if ( retval < 0 )
     {
-      fprintf (stderr, "procRotate(): Error caluclating envelope of time series\n");
+      fprintf (stderr, "procRotate(): Error rotating time series\n");
       return -1;      
     }
   
@@ -1314,6 +1492,7 @@ static int64_t
 readMSEED (char *mseedfile, MSTraceList *mstl)
 {
   MSRecord *msr = 0;
+  MSTraceSeg *seg = 0;
   char srcname[100];
   int64_t totalsamps = 0;
   int retcode = MS_NOERROR;
@@ -1376,8 +1555,24 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
       if ( verbose >= 3 )
 	msr_print (msr, verbose - 3);
       
-      /* Add to the MSTraceList */
-      mstl_addmsr (mstl, msr, 0, 1, timetol, sampratetol);
+      /* Add new data to MSTraceList, merge with other segments */
+      if ( ! (seg = mstl_addmsr (mstl, msr, 0, 1, timetol, sampratetol)) )
+	{
+	  fprintf (stderr, "[%s] Error adding samples to MSTraceList\n", mseedfile);
+	}
+      
+      /* Add additional segment details structure */
+      if ( seg && ! seg->prvtptr )
+	{
+	  if ( ! (seg->prvtptr = malloc (sizeof(struct segdetails))) )
+	    {
+	      fprintf (stderr, "Error allocating memory for additiona segment details\n");
+	    }
+	  
+	  ((struct segdetails *)seg->prvtptr)->procerror = 0;
+	  ((struct segdetails *)seg->prvtptr)->rotated = 0;
+	  ((struct segdetails *)seg->prvtptr)->sacheader = NULL;
+	}
     }
   
   /* Print error if not EOF and not counting down records */
@@ -1402,7 +1597,7 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
  * information.
  *
  * The SAC header contents is stored at the private pointer of the
- * MSTraceSeg structure (MSTraceSeg->prvtptr).
+ * MSTraceSeg structure (MSTraceSeg->prvtptr->sacheader).
  *
  * Returns the number of samples read on success and -1 on failure
  ***************************************************************************/
@@ -1473,19 +1668,32 @@ readSAC (char *sacfile, MSTraceList *mstl)
   /* Add new data to MSTraceList, do not merge with other segments */
   if ( ! (seg = mstl_addmsr (mstl, msr, 0, 0, timetol, sampratetol)) )
     {
-      fprintf (stderr, "[%s] Error adding samples to MSTraceGroup\n", sacfile);
+      fprintf (stderr, "[%s] Error adding samples to MSTraceList\n", sacfile);
     }
   
-  /* Store SAC header structure in private pointer of MSTraceSeg */
+  /* Add additional segment details structure */
   if ( ! seg->prvtptr )
     {
-      if ( ! (seg->prvtptr = malloc (sizeof(struct SACHeader))) )
+      if ( ! (seg->prvtptr = malloc (sizeof(struct segdetails))) )
+	{
+	  fprintf (stderr, "Error allocating memory for additiona segment details\n");
+	}
+      
+      ((struct segdetails *)seg->prvtptr)->procerror = 0;
+      ((struct segdetails *)seg->prvtptr)->rotated = 0;
+      ((struct segdetails *)seg->prvtptr)->sacheader = NULL;
+    }
+  
+  /* Store SAC header structure in segment details */
+  if ( ! ((struct segdetails *)seg->prvtptr)->sacheader )
+    {
+      if ( ! (((struct segdetails *)seg->prvtptr)->sacheader = malloc (sizeof(struct SACHeader))) )
 	{
 	  fprintf (stderr, "Error allocating memory for SACHheader\n");
 	}
       else
 	{
-	  memcpy (seg->prvtptr, &sh, sizeof(struct SACHeader));
+	  memcpy (((struct segdetails *)seg->prvtptr)->sacheader, &sh, sizeof(struct SACHeader));
 	}
     }
   else if ( verbose >= 1 )
@@ -2135,9 +2343,9 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
 	     id->network, id->station, id->location, sacchannel);
   
   /* If an original input SAC header is available use it as a base to update */
-  if ( seg->prvtptr )
+  if ( seg->prvtptr && ((struct segdetails *)seg->prvtptr)->sacheader )
     {
-      struct SACHeader *osh = (struct SACHeader *) seg->prvtptr;
+      struct SACHeader *osh = (struct SACHeader *)((struct segdetails *)seg->prvtptr)->sacheader;
       hptime_t ostarttime;
       
       memcpy (&sh, osh, sizeof (struct SACHeader));
@@ -3218,12 +3426,15 @@ convertSamples (MSTraceSeg *seg, char type)
 static int
 parameterProc (int argcount, char **argvec)
 {
-  char  *filename;
-  char  *filtstr = NULL;
-  char  *freqlimitstr = NULL;
-  char  *dBdownstr = NULL;
-  char  *tptr;
-  int    optind;
+  char string1[10];
+  char string2[10];
+  char *filename;
+  char *filtstr = NULL;
+  char *freqlimitstr = NULL;
+  char *dBdownstr = NULL;
+  char *tptr;
+  int optind;
+  int idx;
   
   /* Process all command line arguments */
   for (optind = 1; optind < argcount; optind++)
@@ -3508,29 +3719,84 @@ parameterProc (int argcount, char **argvec)
         }
       else if (strcmp (argvec[optind], "-ROTATE") == 0)
         {
-	  /* -ROTATE "Z/1,N/2,E/3:azimuth,incidence" */
+	  /* -ROTATE "E/1,N/2,Z/3:azimuth,incidence" */
+
+	  /* Component codes:
+	   * This should be a string of comma-separated, single-characters representing
+	   * the E, N and Z components, in that order regardless of their actual codes.
+	   * Each code may optionally be follow by a / and another code represting the
+	   * code that should be used for the resulting segment.
+	   * 
+	   * Examples:
+	   *   "E,N,Z"
+	   *   "1,2,Z"
+	   *   "1/T,2/Q,Z/L"
+	   *   "E/T,N/R"
+	   *
+	   * Rotation angles:
+	   * This should be a string of two floating point values separated by a comma.
+	   * The first value is the angle of horizontal rotation (azimuth).  The second,
+	   * optional, value is the angle of vertical tilt (incidence).
+	   */
 
 	  char *components = getOptVal(argcount, argvec, optind++, 0);
 	  char *angles = strchr (components, ':');
 	  double azimuth = 0.0;
 	  double incidence = 0.0;
 	  
-	  /* Parse the azimuth and incidence angles */
 	  if ( angles )
 	    *angles++ ='\0';
 	  
-	  tptr = strchr (angles, ',');
-	  
-	  if ( tptr )
+	  /* Parse rotation components and replacement codes */
+	  memset (string1, 0, sizeof(string1));
+	  memset (string2, 0, sizeof(string2));
+	  tptr = components;
+	  for (idx=0; tptr && idx < 3; idx++)
 	    {
-	      *tptr++ ='\0';
-	      incidence = strtod (tptr, NULL);
+	      string1[idx] = tptr[0];
+	      
+	      if ( strlen(tptr) >= 2 )
+		{
+		  if ( tptr[1] == '/' )
+		    string2[idx] = tptr[2];
+		}
+	      
+	      if ( (tptr = strchr(tptr, ',')) )
+		tptr++;
 	    }
 	  
-	  azimuth = strtod (angles, NULL);
+	  /* Parse the azimuth and incidence angles */
+	  if ( angles )
+	    {
+	      tptr = strchr (angles, ',');
+	      
+	      if ( tptr )
+		{
+		  *tptr++ ='\0';
+		  incidence = strtod (tptr, NULL);
+		}
+	  
+	      azimuth = strtod (angles, NULL);
+	    }
+	  else
+	    {
+	      fprintf (stderr, "Rotation operation requires at least an azimuth\n");
+	      exit (1);
+	    }
+	  
+	  if ( ! string1[1] )
+	    {
+	      fprintf (stderr, "Rotation requires at least two horizontal components\n");
+	      exit (1);
+	    }
+	  if ( incidence && ! string1[2] )
+	    {
+	      fprintf (stderr, "3-D Rotation requires three components\n");
+	      exit (1);
+	    }
 	  
 	  /* The components will be parsed in addProcess */
-	  addProcess (PROC_ROTATE, components, NULL, 0, 0, azimuth, incidence);
+	  addProcess (PROC_ROTATE, string1, string2, 0, 0, azimuth, incidence);
         }
       else if (strcmp (argvec[optind], "-STATS") == 0)
         {
@@ -4124,8 +4390,8 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
   double taperwidth = 0.0;
   double *coefficients = NULL;
   int coefficientcount = 0;
-  char rotateZNE[3] = {'\0','\0','\0'};
-  char rotatedZNE[3] = {'\0','\0','\0'};
+  char rotateENZ[3] = {'\0','\0','\0'};
+  char rotatedENZ[3] = {'\0','\0','\0'};
   double rotations[2] = {0.0, 0.0};
   
   /* (De)Convolution */
@@ -4292,43 +4558,21 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
 	    tptr++;
 	}
     }
-
+  
   /* Rotation */
   if ( type == PROC_ROTATE )
     {
-      /* string1 == Z/L,N/Q,E/T */
+      /* string1 == pre-rotation components */
+      /* string2 == post-rotation components */
       /* dvalue1 == azimuth */
       /* dvalue2 == incidence */
-      int idx;
       
-      /* Parse component codes
-       * This should be a string of comma-separated, single-character representing
-       * the Z, N and E components, regardless of their actual codes.  Each code
-       * may optionally be follow by a / and another code represting the code that
-       * should be used for the resulting segment.
-       * 
-       * Examples:
-       *   "Z,N,E"
-       *   "Z,1,2"
-       *   "Z/L,1/Q,2/T"
-       *   "Z,N/R,E/T"
-       */
-      tptr = string1;
-      for (idx=0; tptr && idx < 3; idx++)
-	{
-	  rotateZNE[idx] = tptr[0];
-	  
-	  if ( strlen(tptr) >= 2 )
-	    {
-	      if ( tptr[1] == '/' )
-		rotatedZNE[idx] = tptr[2];
-	    }
-	  
-	  if ( (tptr = strchr(tptr, ',')) )
-	    tptr++;
-	}
-      
-      /* Set azimuth and incidence */
+      rotateENZ[0] = string1[0];
+      rotateENZ[1] = string1[1];
+      rotateENZ[2] = string1[2];
+      rotatedENZ[0] = string2[0];
+      rotatedENZ[1] = string2[1];
+      rotatedENZ[2] = string2[2];
       rotations[0] = dvalue1;
       rotations[1] = dvalue2;
     }
@@ -4387,12 +4631,12 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
       newlp->taperwidth = taperwidth;
       newlp->coefficients = coefficients;
       newlp->coefficientcount = coefficientcount;
-      newlp->rotateZNE[0] = rotateZNE[0];
-      newlp->rotateZNE[1] = rotateZNE[1];
-      newlp->rotateZNE[2] = rotateZNE[2];
-      newlp->rotatedZNE[0] = rotatedZNE[0];
-      newlp->rotatedZNE[1] = rotatedZNE[1];
-      newlp->rotatedZNE[2] = rotatedZNE[2];
+      newlp->rotateENZ[0] = rotateENZ[0];
+      newlp->rotateENZ[1] = rotateENZ[1];
+      newlp->rotateENZ[2] = rotateENZ[2];
+      newlp->rotatedENZ[0] = rotatedENZ[0];
+      newlp->rotatedENZ[1] = rotatedENZ[1];
+      newlp->rotatedENZ[2] = rotatedENZ[2];
       newlp->rotations[0] = rotations[0];
       newlp->rotations[1] = rotations[1];
       
@@ -4405,6 +4649,79 @@ addProcess (int type, char *string1, char *string2, int ivalue1, int ivalue2,
     }
   
 }  /* End of addProcess() */
+
+
+/***************************************************************************
+ * procDescription:
+ * Return pointer to a text description of a processing number.
+ ***************************************************************************/
+static char *
+procDescription (int proctype)
+{
+  switch ( proctype ) {
+    
+  case PROC_STATS:
+    return "Calculate statistics";
+    break;
+  case PROC_LPFILTER:
+    return "Lowpass filter";
+    break;
+  case PROC_HPFILTER:
+    return "Highpass filter";
+    break;
+  case PROC_BPFILTER:
+    return "Bandpass filter";
+    break;
+  case PROC_CONVOLVE:
+    return "Convolve/Deconvolve";
+    break;
+  case PROC_CONVRESP:
+    return "Convole RESP";
+    break;
+  case PROC_DECONVRESP:
+    return "Deconvolve RESP";
+    break;
+  case PROC_CONVSAC:
+    return "Convolve SACPZ";
+    break;
+  case PROC_DECONVSAC:
+    return "Deconvolve SACPZ";
+    break;
+  case PROC_DIFF2:
+    return "Differentiate";
+    break;
+  case PROC_INTTRAP:
+    return "Integrate";
+    break;
+  case PROC_RMEAN:
+    return "Remove mean";
+    break;
+  case PROC_SCALE:
+    return "Scale";
+    break;
+  case PROC_DECIMATE:
+    return "Decimate";
+    break;
+  case PROC_TAPER:
+    return "Taper";
+    break;
+  case PROC_POLYNOMIALM:
+    return "Apply polynomial";
+    break;
+  case PROC_ENVELOPE:
+    return "Envelope";
+    break;
+  case PROC_DATATRIM:
+    return "Data trim";
+    break;
+  case PROC_ROTATE:
+    return "Rotate";
+    break;
+  default:
+    return "Unknown operation";
+    break;
+  }
+}  /* End of procDescription() */
 
 
 /***************************************************************************
@@ -4500,8 +4817,8 @@ usage (void)
 	   " -POLYM c1,c2,...   Apply a Maclaurin type polynomial with given coefficients\n"
 	   " -ENV          Calculate envelope of time series\n"
 	   " -DTRIM        Trim time series to latest start and earliest end\n"
-	   " -ROTATE Z,N,E:azimuth,incidence\n"
-	   "                 Rotate components sets\n"
+	   " -ROTATE E[/1],N[/2],Z[/3]:azimuth[,incidence]\n"
+	   "                 Rotate component sets, 2-D or 3-D\n"
 	   " -STATS        Add simple stats to processing log, verbose to print\n"
 	   "\n"
 	   " file#         File of input Mini-SEED or SAC\n"
