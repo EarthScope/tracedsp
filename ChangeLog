@@ -1,3 +1,6 @@
+2012.298:
+	- Remove check preventing miniSEED output from generating file names.
+
 2012.249:
 	- Add -ROTATE operation to perform 2-D and 3-D component set rotations.
 

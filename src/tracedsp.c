@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.249
+ * modified 2012.298
  ***************************************************************************/
 
 // Add resampling process
@@ -33,7 +33,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.6+2012.249"
+#define VERSION "0.9.5+2012.298"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -2167,12 +2167,12 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
    * If nothing has been written: overwrite */
   char *mode = ( outputbytes > 0 ) ? "ab" : "wb";
 
-  if ( ! id || ! seg || ! outputfile )
+  if ( ! id || ! seg )
     return -1;
-  
+
   if ( seg->numsamples <= 0 || seg->samprate == 0.0 )
     return 0;
-  
+
   /* Convert data buffer and type depending on encoding format */
   if ( packencoding == 3 || packencoding == 10 || packencoding == 11 ) /* 32-bit integers */
     {
