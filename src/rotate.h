@@ -7,15 +7,10 @@
 extern "C" {
 #endif
 
-/* Rotation types for 3-D rotation */
-#define ROT_ZNE_TO_LQT 0
-#define ROT_ZNE_TO_UVW 1
-#define ROT_UVW_TO_ZNE 2
-
-void rotate2 ( double *n, double *e, long lth, double angle,
+void rotate2 ( double *n, double *e, long int npts, double azimuth,
 	       double *r, double *t );
-void rotate3 ( double *z, double *n, double *e, long lth,
-	       double azim, double inci, int type,
+void rotate3 ( double *z, double *n, double *e, long int npts,
+	       double azimiuth, double incidence,
 	       double *l, double *q, double *t );
 
 #ifdef __cplusplus

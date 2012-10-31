@@ -1,3 +1,6 @@
+2012.305:
+	- Rework rotation code, simplify and validate.
+
 2012.298:
 	- Remove check preventing miniSEED output from generating file names.
 

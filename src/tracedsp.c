@@ -1436,7 +1436,6 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
     rotate3 (ENZseg[2]->datasamples, ENZseg[1]->datasamples, ENZseg[0]->datasamples,
 	     tseg->numsamples,
 	     plp->rotations[0], plp->rotations[1],
-	     ROT_ZNE_TO_LQT,
 	     ENZseg[2]->datasamples, ENZseg[1]->datasamples, ENZseg[0]->datasamples);
   else
     rotate2 (ENZseg[1]->datasamples, ENZseg[0]->datasamples,
