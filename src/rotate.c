@@ -3,7 +3,7 @@
  *
  * 2-D and 3-D series rotation routines.
  *
- * Modified: 2012.303
+ * Modified: 2012.306
  *********************************************************************/
 
 #include <stdio.h>
@@ -20,6 +20,11 @@
  * rotate2:
  *
  * Perform 2-D rotation.
+ *
+ * If the N and E input data are positive to the North and East
+ * respectively the resulting R component will be positive along the
+ * azimuth rotated to and the T component will be positive along an
+ * axis 90 clockwise of the R component.
  *
  * Arguments:
  *   n       : The "north" component, 90 degress counter-clockwise from "east"
@@ -58,7 +63,15 @@ rotate2 ( double *n, double *e, long int npts, double azimuth,
 /*********************************************************************
  * rotate3:
  *
- * Perform 3-D rotation.
+ * Perform 3-D rotation to the LQT, ray-oriented system.
+ *
+ * If the N and E input data are positive to the North and East
+ * respectively and Z is positive up the resulting components are:
+ *
+ *   L: Longitudinal, in the direction of the ray away from the source
+ *        as defined by the incidence and azimuth (P wave energy).
+ *   Q: 90 degrees from L in the vertical plane pointing upward (SV energy).
+ *   T: 90 degrees from L and Q in the horizontal plane (SH energy).
  *
  * Arguments:
  *   z         : The "vertical" component, perpendicular to "north" and "east"
@@ -67,7 +80,7 @@ rotate2 ( double *n, double *e, long int npts, double azimuth,
  *   npts      : number of samples in each component array
  *   azimuth   : rotation angle (degrees clockwise) for "north" and "east"
  *   incidence : rotation angle (degress from vertical) for radial and "vertical"
- *   l         : radial output component, may be the same as input array
+ *   l         : ray direction output component, may be the same as input array
  *   q         : transverse output component, may be the same as input array
  *   t         : transverse output component, may be the same as input array
  *

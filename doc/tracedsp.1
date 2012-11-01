@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2012/10/04
+.TH TRACEDSP 1 2012/11/01
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -295,10 +295,17 @@ components that should be considered a channel set.  The vertical
 component is optional for 2-D rotations.  Each of these codes may
 optionally be followed by a new code for the rotated trace.
 
-The \fBE\fP and \fBN\fP components will be rotated \fBazimuth\fP
-degrees clockwise from north.  If a vertical component and
-\fBincidence\fP are specified the vertical and north components will
-be rotated \fBincidence\fP degrees from vertical.
+2-D rotations will be performed when only an \fBazimuth\fP is
+specified.  The \fBE\fP and \fBN\fP components will be rotated
+\fBazimuth\fP degrees clockwise from north.
+
+3-D rotations to the ray oriented LQT system will be performed when
+both \fBazimuth\fP and \fBincidence\fP and all three components are
+specified.  Assuming Z, N, and E are positive the L component will be
+positive along the ray defined by the azimuth and incidence, Q will be
+orthgonal to L in the vertical plane positive up and T will be
+orthogonal to both in the horizontal plane positive clockwise from the
+azimuth.
 
 For example, a simple 35 degree 2-D rotation of horizontal components:
 
@@ -312,9 +319,9 @@ The same rotation but renaming the orientation codes to T and R:
 -ROTATE E/T,N/R:35
 .fi
 
-Another example of 3-D rotation to a ray oriented LQT system, the
-horizontals are rotated 35 degrees and the vertical and radial
-components are rotated 18.8 degrees:
+Another example of 3-D rotation to the ray oriented LQT system 35
+degrees clockwise from the original north axis and 18.8 degress of
+incidence with the original vertical axis:
 
 .nf
 -ROTATE E/T,N/Q,Z/L:35,18.8
