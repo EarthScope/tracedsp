@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2012/11/01
+.TH TRACEDSP 1 2012/12/19
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -326,6 +326,9 @@ incidence with the original vertical axis:
 .nf
 -ROTATE E/T,N/Q,Z/L:35,18.8
 .fi
+
+If the input data is SAC and the original orientation values are
+set in the header they will be updated appropriately.
 
 .IP "-STATS"
 Calculate simple series statistics for each segment and add to the
