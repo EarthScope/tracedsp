@@ -13,7 +13,7 @@
 
 // Add option to fill gaps under specified length with zeros
 
-// Change SAC header orientation values after rotation
+// Chage SAC header orientation values after rotation
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +33,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.5+2012.318"
+#define VERSION "0.9.5+2012.354"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -1444,6 +1444,7 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 	     ENZseg[1]->datasamples, ENZseg[0]->datasamples);
   
   /* Rename channel orientation codes and mark as rotated */
+  /* idx: 0=E, 1=N, 2=Z */ 
   for ( idx = 0; idx < 3; idx++ )
     {
       if ( ! ENZid[idx] )
@@ -1463,12 +1464,26 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 	  
 	  if ( sd->sacheader )
 	    {
+	      /* Rename orientation code */
+	      if ( plp->rotatedENZ[idx] )
+		{
+		  if ( (cptr = strrchr (sd->sacheader->kcmpnm, plp->rotatedENZ[idx])) )
+		    *cptr = plp->rotatedENZ[idx];
+		}
+	      
 	      /* Update orientation values */
-	      if ( plp->rotations[1] )
+	      if ( plp->rotations[1] )  /* 3-D */
 		{
 		  if ( sd->sacheader->cmpaz != FUNDEF )
 		    {
-		      sd->sacheader->cmpaz += plp->rotations[0];
+		      /* If the Z component is vertical set the azimuth */
+		      if ( idx == 2 && sd->sacheader->cmpinc == 0 )
+			sd->sacheader->cmpaz = plp->rotations[0];
+		      /* If the N component, rotate and reverse polarity */
+		      else if ( idx == 1 )
+			sd->sacheader->cmpaz += plp->rotations[0] + 180;
+		      else
+			sd->sacheader->cmpaz += plp->rotations[0];
 		      
 		      while ( sd->sacheader->cmpaz > 360.0 )
 			sd->sacheader->cmpaz -= 360.0;
@@ -1477,9 +1492,13 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 			sd->sacheader->cmpaz += 360.0;
 		    }
 		  
-		  if ( sd->sacheader->cmpinc != FUNDEF )
+		  /* Update incident angle for L and Q components */
+		  if ( sd->sacheader->cmpinc != FUNDEF && idx != 0 )
 		    {
-		      sd->sacheader->cmpinc -= plp->rotations[1];
+		      if ( idx == 2 )
+			sd->sacheader->cmpinc += plp->rotations[1];
+		      if ( idx == 1 )
+			sd->sacheader->cmpinc -= plp->rotations[1];
 		      
 		      while ( sd->sacheader->cmpinc > 180.0 )
 			sd->sacheader->cmpinc -= 180.0;
@@ -1487,9 +1506,8 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 		      while ( sd->sacheader->cmpinc < 0.0 )
 			sd->sacheader->cmpinc += 180.0;
 		    }
-		  
 		}
-	      else
+	      else if ( idx == 0 || idx == 1 ) /* 2-D, horizontals only */
 		{
 		  if ( sd->sacheader->cmpaz != FUNDEF )
 		    {
@@ -1501,13 +1519,6 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 		      while ( sd->sacheader->cmpaz < 0.0 )
 			sd->sacheader->cmpaz += 360.0;
 		    }
-		}
-	      
-	      /* Rename orientation code */
-	      if ( plp->rotatedENZ[idx] )
-		{
-		  if ( (cptr = strrchr (sd->sacheader->kcmpnm, plp->rotatedENZ[idx])) )
-		    *cptr = plp->rotatedENZ[idx];
 		}
 	    }
 	}

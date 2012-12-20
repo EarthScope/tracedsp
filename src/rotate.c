@@ -19,7 +19,9 @@
 /*********************************************************************
  * rotate2:
  *
- * Perform 2-D rotation.
+ * Perform 2-D rotation.  The resulting R component will be positive
+ * in the direction of the specified azimuth and the T component will
+ * be positive 90 degrees clockwise of R.
  *
  * If the N and E input data are positive to the North and East
  * respectively the resulting R component will be positive along the
