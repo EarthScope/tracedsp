@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.298
+ * modified 2012.318
  ***************************************************************************/
 
 // Add resampling process
@@ -33,7 +33,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.5+2012.306"
+#define VERSION "0.9.5+2012.318"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -1461,11 +1461,54 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 	  
 	  sd->rotated = 1;
 	  
-	  /* Rename orientation code in SAC header if present */
-	  if ( plp->rotatedENZ[idx] && sd->sacheader )
+	  if ( sd->sacheader )
 	    {
-	      if ( (cptr = strrchr (sd->sacheader->kcmpnm, plp->rotatedENZ[idx])) )
-		*cptr = plp->rotatedENZ[idx];
+	      /* Update orientation values */
+	      if ( plp->rotations[1] )
+		{
+		  if ( sd->sacheader->cmpaz != FUNDEF )
+		    {
+		      sd->sacheader->cmpaz += plp->rotations[0];
+		      
+		      while ( sd->sacheader->cmpaz > 360.0 )
+			sd->sacheader->cmpaz -= 360.0;
+		      
+		      while ( sd->sacheader->cmpaz < 0.0 )
+			sd->sacheader->cmpaz += 360.0;
+		    }
+		  
+		  if ( sd->sacheader->cmpinc != FUNDEF )
+		    {
+		      sd->sacheader->cmpinc -= plp->rotations[1];
+		      
+		      while ( sd->sacheader->cmpinc > 180.0 )
+			sd->sacheader->cmpinc -= 180.0;
+		      
+		      while ( sd->sacheader->cmpinc < 0.0 )
+			sd->sacheader->cmpinc += 180.0;
+		    }
+		  
+		}
+	      else
+		{
+		  if ( sd->sacheader->cmpaz != FUNDEF )
+		    {
+		      sd->sacheader->cmpaz += plp->rotations[0];
+		      
+		      while ( sd->sacheader->cmpaz > 360.0 )
+			sd->sacheader->cmpaz -= 360.0;
+		      
+		      while ( sd->sacheader->cmpaz < 0.0 )
+			sd->sacheader->cmpaz += 360.0;
+		    }
+		}
+	      
+	      /* Rename orientation code */
+	      if ( plp->rotatedENZ[idx] )
+		{
+		  if ( (cptr = strrchr (sd->sacheader->kcmpnm, plp->rotatedENZ[idx])) )
+		    *cptr = plp->rotatedENZ[idx];
+		}
 	    }
 	}
     }
