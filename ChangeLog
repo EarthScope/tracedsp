@@ -1,3 +1,6 @@
+2012.355:
+	- Fix SAC header updates for rotation operation.
+
 2012.354:
 	- Update existing SAC headers following rotation operations.  Only
 	possible when input data is SAC and the orientation headers are set.

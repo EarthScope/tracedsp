@@ -2,18 +2,16 @@
  * tracedsp.c - time series processor for Mini-SEED and SAC data
  *
  * Opens user specified files, parses the input data, applys
- * processing steps to the timeseries and writes the data.
+ * processing steps to the timeseries and writes the data.  Kapeesh?
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.318
+ * modified 2012.355
  ***************************************************************************/
 
 // Add resampling process
 
 // Add option to fill gaps under specified length with zeros
-
-// Chage SAC header orientation values after rotation
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +31,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.5+2012.354"
+#define VERSION "0.9.6dev"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -1297,6 +1295,8 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
   MSTraceSeg *seg = NULL;
   MSTraceSeg *ENZseg[3] = {NULL,NULL,NULL};
   
+  struct SACHeader *ENZsacheader[3] = {NULL,NULL,NULL};
+  
   hptime_t hptimetol;
   char stime[50];
   char etime[50];
@@ -1315,7 +1315,7 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
   
   /* Target ID source name: Net_Sta_Loc_Chan */
   snlength = snprintf (tsname, sizeof(tsname), "%s_%s_%s_%s",
-		    tid->network, tid->station, tid->location, tid->channel);
+		       tid->network, tid->station, tid->location, tid->channel);
   
   if ( snlength <= 0 )
     return -1;
@@ -1471,56 +1471,64 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 		    *cptr = plp->rotatedENZ[idx];
 		}
 	      
-	      /* Update orientation values */
-	      if ( plp->rotations[1] )  /* 3-D */
-		{
-		  if ( sd->sacheader->cmpaz != FUNDEF )
-		    {
-		      /* If the Z component is vertical set the azimuth */
-		      if ( idx == 2 && sd->sacheader->cmpinc == 0 )
-			sd->sacheader->cmpaz = plp->rotations[0];
-		      /* If the N component, rotate and reverse polarity */
-		      else if ( idx == 1 )
-			sd->sacheader->cmpaz += plp->rotations[0] + 180;
-		      else
-			sd->sacheader->cmpaz += plp->rotations[0];
-		      
-		      while ( sd->sacheader->cmpaz > 360.0 )
-			sd->sacheader->cmpaz -= 360.0;
-		      
-		      while ( sd->sacheader->cmpaz < 0.0 )
-			sd->sacheader->cmpaz += 360.0;
-		    }
-		  
-		  /* Update incident angle for L and Q components */
-		  if ( sd->sacheader->cmpinc != FUNDEF && idx != 0 )
-		    {
-		      if ( idx == 2 )
-			sd->sacheader->cmpinc += plp->rotations[1];
-		      if ( idx == 1 )
-			sd->sacheader->cmpinc -= plp->rotations[1];
-		      
-		      while ( sd->sacheader->cmpinc > 180.0 )
-			sd->sacheader->cmpinc -= 180.0;
-		      
-		      while ( sd->sacheader->cmpinc < 0.0 )
-			sd->sacheader->cmpinc += 180.0;
-		    }
-		}
-	      else if ( idx == 0 || idx == 1 ) /* 2-D, horizontals only */
-		{
-		  if ( sd->sacheader->cmpaz != FUNDEF )
-		    {
-		      sd->sacheader->cmpaz += plp->rotations[0];
-		      
-		      while ( sd->sacheader->cmpaz > 360.0 )
-			sd->sacheader->cmpaz -= 360.0;
-		      
-		      while ( sd->sacheader->cmpaz < 0.0 )
-			sd->sacheader->cmpaz += 360.0;
-		    }
-		}
+	      ENZsacheader[idx] = sd->sacheader;
 	    }
+	}
+    }
+  
+  /* Update SAC orientation values */
+  if ( plp->rotations[1] && ENZsacheader[0] && ENZsacheader[1] && ENZsacheader[2] ) /* 3-D */
+    {
+      /* Rotate E/T component azimuth */
+      if ( ENZsacheader[0]->cmpaz != FUNDEF )
+	ENZsacheader[0]->cmpaz += plp->rotations[0];
+      
+      /* Rotate N/Q component azimuth and reverse polarity */
+      if ( ENZsacheader[1]->cmpaz != FUNDEF )
+	ENZsacheader[1]->cmpaz += plp->rotations[0] + 180;
+      
+      /* Rotate Z/L component azimuth, assume perpendicular to Q */
+      if ( ENZsacheader[2]->cmpaz != FUNDEF &&
+	   ENZsacheader[1]->cmpaz != FUNDEF )
+	ENZsacheader[2]->cmpaz = ENZsacheader[1]->cmpaz - 180;
+      
+      for ( idx = 0; idx < 3; idx++ )
+	{
+	  while ( ENZsacheader[idx]->cmpaz > 360.0 )
+	    ENZsacheader[idx]->cmpaz -= 360.0;
+	  
+	  while ( ENZsacheader[idx]->cmpaz < 0.0 )
+	    ENZsacheader[idx]->cmpaz += 360.0;
+	}
+      
+      /* Update incidence angle for L and Q components */
+      if ( ENZsacheader[1]->cmpinc != FUNDEF )
+	ENZsacheader[1]->cmpinc -= plp->rotations[1];
+      
+      if ( ENZsacheader[2]->cmpinc != FUNDEF )
+	ENZsacheader[2]->cmpinc += plp->rotations[1];
+      
+      for ( idx = 1; idx < 3; idx++ )
+	{
+	  while ( ENZsacheader[idx]->cmpinc > 180.0 )
+	    ENZsacheader[idx]->cmpinc -= 180.0;
+	  
+	  while ( ENZsacheader[idx]->cmpinc < 0.0 )
+	    ENZsacheader[idx]->cmpinc += 180.0;
+	}
+    }
+  else if ( ENZsacheader[0] && ENZsacheader[1] ) /* 2-D, horizontals only */
+    {
+      for ( idx = 0; idx < 2; idx++ )
+	{
+	  if ( ENZsacheader[idx]->cmpaz != FUNDEF )
+	    ENZsacheader[idx]->cmpaz += plp->rotations[0];
+	  
+	  while ( ENZsacheader[idx]->cmpaz > 360.0 )
+	    ENZsacheader[idx]->cmpaz -= 360.0;
+	  
+	  while ( ENZsacheader[idx]->cmpaz < 0.0 )
+	    ENZsacheader[idx]->cmpaz += 360.0;
 	}
     }
   
