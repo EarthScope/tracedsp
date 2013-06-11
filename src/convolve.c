@@ -435,11 +435,17 @@ calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
   
   /* Read RESP information and calculate frequency response using evalresp */
   resp = evresp_itp (sta, chan, net, loc, datetime, units, respfilename, freqs, nfreqs,
-		     "cs", (verbose>1)?"-v":NULL, startstage, stopstage, 0, 0, 0, 0.0, totalsensflag);
+		     "cs", (verbose>1)?"-v":NULL, startstage, stopstage, 0, 0, 0, 0, totalsensflag);
   
   if ( ! resp )
     {
       fprintf (stderr, "calcfr_resp(): Error with evresp()\n");
+      return -1;
+    }
+  else if ( resp->nfreqs != nfreqs )
+    {
+      fprintf (stderr, "calcfr_resp(): Number of frequencies requested (%d) not equal to returned (%d), FAP response?\n",
+	       nfreqs, resp->nfreqs);
       return -1;
     }
   else if ( verbose )
@@ -674,7 +680,8 @@ spectraltaper (double freq, double fqh, double fql)
     }
   else
     {
-      fprintf (stderr, "taper(): Invalid window specified\n");
+      fprintf (stderr, "spectraltaper(): Invalid window specified\n");
+      fprintf (stderr, "    freq: %g, fqh: %g, fql: %g\n", freq, fqh, fql);
     }
   
   return (taper_v);

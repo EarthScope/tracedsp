@@ -31,7 +31,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.6"
+#define VERSION "0.9.7"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -675,6 +675,12 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 				    respunits, MS_HPTIME2EPOCH (seg->starttime), respusedelay,
 				    plp->filename[idx], resptotalsens,
 				    &xreal, &ximag, verbose);
+	    }
+	  
+	  if ( retval )
+	    {
+	      fprintf (stderr, "Error determing frequency response\n");
+	      return -1;
 	    }
 	  
 	  /* Assign to convolution or deconvolution array */

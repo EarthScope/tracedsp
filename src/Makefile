@@ -1,10 +1,10 @@
 
 # Standard compiler parameters
-CFLAGS += -O -I../libmseed -I../evalresp
+CFLAGS += -I../libmseed -I../evalresp
 
 # Options specific for GCC
 GCC = gcc
-GCCFLAGS = -O2 -Wall -I../libmseed -I../evalresp
+GCCFLAGS = -Wall -I../libmseed -I../evalresp
 
 BIN = tracedsp
 
