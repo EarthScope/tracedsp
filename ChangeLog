@@ -3,7 +3,8 @@
 	fail gracefully when this does not occur.  This can happen for
 	responses expressed as Frequency-Amplitude-Phase (FAP).  The current
 	convolution code expects to work within the frequency band of DC to
-	Nyquist, so interpolating within the FAP band is only part of the solution.
+	Nyquist, so the interpolation within the FAP band as supported by
+	evalresp is only part of the solution.
 
 2012.355: 0.9.6
 	- Update existing SAC headers following rotation operations.  Only
