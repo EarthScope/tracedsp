@@ -13,7 +13,7 @@
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
  *
- * Modified: 2012.098
+ * Modified: 2014.073
  *********************************************************************/
 
 #include <stdio.h>
@@ -387,7 +387,7 @@ calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
   /* Construct an appropriate time string: YYYY,JJJ,HH:MM:SS */
   rtime = gmtime(&resptime);
   snprintf (datetime, sizeof(datetime), "%04d,%03d,%02d:%02d:%02d",
-	    rtime->tm_year+1900, rtime->tm_yday,
+	    rtime->tm_year+1900, rtime->tm_yday+1,
 	    rtime->tm_hour, rtime->tm_min, rtime->tm_sec);
   
   /* Allocate frequencies array */
