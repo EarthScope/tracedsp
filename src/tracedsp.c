@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2012.355
+ * modified 2014.035
  ***************************************************************************/
 
 // Add resampling process
@@ -2280,7 +2280,7 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
       return -1;
     }
   
-  /* Populate MSTrace used for packing */
+  /* Populate MSTrace used for packing, handle channel override */
   mst = mst_init (NULL);
   strncpy (mst->network, id->network, sizeof(mst->network)-1);
   mst->network[sizeof(mst->network)-1] = '\0';
@@ -2388,7 +2388,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
 {
   struct SACHeader sh = NullSACHeader;
   char outfile[1024];
-  char sacchannel[11];
+  char sacchannel[11] = "";
   
   float *fdata = 0;
 
@@ -2459,15 +2459,15 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
       sh.e = sh.b + (seg->numsamples - 1) * (1 / seg->samprate);
     }
   
-  /* Set time series source parameters */
+  /* Set time series source parameters, handle channel override */
   if ( *id->network != '\0' )
     strncpy (sh.knetwk, id->network, 8);
   if ( *id->station != '\0' )
     strncpy (sh.kstnm, id->station, 8);
   if ( *id->location != '\0' )
     strncpy (sh.khole, id->location, 8);
-  if ( *id->channel != '\0' )
-    strncpy (sh.kcmpnm, id->channel, 8);
+  if ( sacchannel != '\0' )
+    strncpy (sh.kcmpnm, sacchannel, 8);
   
   /* Set misc. header variables */
   sh.nvhdr = 6;                 /* Header version = 6 */
@@ -2520,7 +2520,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
 	  /* Create output file name: Net.Sta.Loc.Chan.Qual.Year.Day.Hour.Min.Sec.SAC */
 	  snprintf (outfile, sizeof(outfile), "%s%s%s.%s.%s.%s.%.1s.%04d,%03d,%02d:%02d:%02d.SAC",
 		    (outputdir)?outputdir:"",(outputdir)?"/":"",
-		    id->network, id->station, id->location, id->channel,
+		    id->network, id->station, id->location, sacchannel,
 		    &id->dataquality, sh.nzyear, sh.nzjday, sh.nzhour,
 		    sh.nzmin, sh.nzsec);
 	}
@@ -2563,7 +2563,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
 	  /* Create output file name: Net.Sta.Loc.Chan.Qual.Year.Day.Hour.Min.Sec.SACA */
 	  snprintf (outfile, sizeof(outfile), "%s%s%s.%s.%s.%s.%.1s.%04d,%03d,%02d:%02d:%02d.SACA",
 		    (outputdir)?outputdir:"",(outputdir)?"/":"",
-		    id->network, id->station, id->location, id->channel,
+		    id->network, id->station, id->location, sacchannel,
 		    &id->dataquality, sh.nzyear, sh.nzjday, sh.nzhour,
 		    sh.nzmin, sh.nzsec);
 	}

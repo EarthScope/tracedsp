@@ -1,4 +1,8 @@
+2014.287: 0.9.9
+	- Fix channel override option (-c) for SAC output.
+
 2014.073: 0.9.8
+	- Update libmseed to 2.12.
 	- evalresp usage: Fix off-by-one error in day of year when converting an
 	epoch to time components using the system gmtime().  In convolve.c this
 	is done to create a time string for evalresp to parse.
