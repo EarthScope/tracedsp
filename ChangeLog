@@ -1,3 +1,6 @@
+2018.121: 0.9.10
+	- Allow -POLYM values to start with dash.
+
 2014.287: 0.9.9
 	- Fix channel override option (-c) for SAC output.
 

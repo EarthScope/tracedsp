@@ -6,7 +6,7 @@
  *
  * Written by Chad Trabant, IRIS Data Management Center.
  *
- * modified 2014.035
+ * modified 2018.121
  ***************************************************************************/
 
 // Add resampling process
@@ -31,7 +31,7 @@
 #include "envelope.h"
 #include "sacformat.h"
 
-#define VERSION "0.9.9"
+#define VERSION "0.9.10"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -3773,7 +3773,7 @@ parameterProc (int argcount, char **argvec)
         }
       else if (strcmp (argvec[optind], "-POLYM") == 0)
         {
-	  char *coeffstr = getOptVal(argcount, argvec, optind++, 0);
+	  char *coeffstr = getOptVal(argcount, argvec, optind++, 1);
 	  addProcess (PROC_POLYNOMIALM, coeffstr, NULL, 0, 0, 0.0, 0.0);
         }
       else if (strcmp (argvec[optind], "-ENV") == 0)
