@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2012/12/19
+.TH TRACEDSP 1 2018/05/02
 .SH NAME
 Trace DSP, a time series processor for SAC and Mini-SEED data
 
@@ -58,6 +58,11 @@ Limit processing to Mini-SEED records that end before \fItime\fP.
 The format of the \fItime\fP arguement
 is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.).
+
+.IP "-Im or -Is"
+Force input data to be considered either (m) miniSEED or (s) SAC.  By
+default the input format is auto-detected.  This override takes effect
+for all files specified on the command line after the option.
 
 .IP "-MSEED"
 Write output as Mini-SEED instead of SAC.

@@ -1,5 +1,7 @@
 2018.122:
 	- Update libmseed to 2.19.5.
+	- Add -Im and -Is options to force input to be considered either miniSEED
+	or SAC.
 
 2018.121: 0.9.10
 	- Allow -POLYM values to start with dash.

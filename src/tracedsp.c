@@ -5,8 +5,6 @@
  * processing steps to the timeseries and writes the data.  Kapeesh?
  *
  * Written by Chad Trabant, IRIS Data Management Center.
- *
- * modified 2018.121
  ***************************************************************************/
 
 // Add resampling process
@@ -31,7 +29,7 @@
 #include "sacformat.h"
 #include "taper.h"
 
-#define VERSION "0.9.10"
+#define VERSION "0.9.11"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -189,6 +187,7 @@ static char *encodingstr  = 0;    /* SEED encoding format string */
 static int byteorder      = -1;   /* Byte order of output data, use libmseed default */
 static int srateblkt      = 0;    /* Add blockette 100 to Mini-SEED */
 static flag dataformat    = 2;    /* 0 = No output, 1 = Mini-SEED, 2 = SAC */
+static flag informat      = 0;    /* 0 = auto detect, 1 = Mini-SEED, 2 = SAC */
 static flag sacinformat   = 0;    /* 0=auto, 1=alpha, 2=binary (host), 3=binary (LE), 4=binary (BE) */
 static flag sacoutformat  = 2;    /* 1=alpha, 2=binary (host), 3=binary (LE), 4=binary (BE) */
 static char *sacnet       = 0;    /* SAC network code override */
@@ -3556,6 +3555,14 @@ parameterProc (int argcount, char **argvec)
       if (endtime == HPTERROR)
         return -1;
     }
+    else if (strcmp (argvec[optind], "-Im") == 0)
+    {
+      informat = 1;
+    }
+    else if (strcmp (argvec[optind], "-Is") == 0)
+    {
+      informat = 2;
+    }
     else if (strcmp (argvec[optind], "-MSEED") == 0)
     {
       dataformat = 1;
@@ -4362,8 +4369,10 @@ addFile (char *filename)
 
   fclose (ifp);
 
-  /* Check for Mini-SEED otherwise default to SAC */
-  if (MS_ISVALIDHEADER (header))
+  /* Set input format or check for Mini-SEED, otherwise default to SAC */
+  if (informat)
+    newlp->format = informat;
+  else if (MS_ISVALIDHEADER (header))
     newlp->format = 1;
   else
     newlp->format = 2;
@@ -4838,6 +4847,8 @@ usage (void)
            " -ts time      Limit Mini-SEED input to records that start after time\n"
            " -te time      Limit Mini-SEED input to records that end before time\n"
            "                 time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
+           " -I[ms]        Force input to be considered (m)iniSEED or (s)AC\n"
+           "                 By default the input format is autodetected\n"
            " -MSEED        Write output as Mini-SEED instead of default SAC\n"
            " -Mr bytes     Specify record length in bytes, default is autodetection\n"
            " -Me encoding  Specify encoding format of data samples for input data\n"
