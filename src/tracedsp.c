@@ -2469,7 +2469,7 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
     strncpy (sh.kstnm, id->station, 8);
   if (*id->location != '\0')
     strncpy (sh.khole, id->location, 8);
-  if (sacchannel != '\0')
+  if (sacchannel[0] != '\0')
     strncpy (sh.kcmpnm, sacchannel, 8);
 
   /* Set misc. header variables */
