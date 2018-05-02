@@ -6,15 +6,14 @@
  * Modified: 2012.306
  *********************************************************************/
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
 
 #include "rotate.h"
 
 /* Pi, with comical precision */
 #define PI 3.1415926535897932384626433832795
-
 
 /*********************************************************************
  * rotate2:
@@ -38,29 +37,28 @@
  *
  *********************************************************************/
 void
-rotate2 ( double *n, double *e, long int npts, double azimuth,
-	  double *r, double *t )
+rotate2 (double *n, double *e, long int npts, double azimuth,
+         double *r, double *t)
 {
   double sina, cosa;
   double N, E;
   long int i;
-  
-  azimuth *= (PI / 180.0);
-  sina = sin ( azimuth );
-  cosa = cos ( azimuth );
-  
-  /* Apply rotation matrix */
-  for ( i=0; i < npts; i++ )
-    {
-      N = n[i];
-      E = e[i];
-      
-      r[i] = sina * E + cosa * N;
-      t[i] = cosa * E - sina * N;
-    }
-  
-} /* End of rotate2 */
 
+  azimuth *= (PI / 180.0);
+  sina = sin (azimuth);
+  cosa = cos (azimuth);
+
+  /* Apply rotation matrix */
+  for (i = 0; i < npts; i++)
+  {
+    N = n[i];
+    E = e[i];
+
+    r[i] = sina * E + cosa * N;
+    t[i] = cosa * E - sina * N;
+  }
+
+} /* End of rotate2 */
 
 /*********************************************************************
  * rotate3:
@@ -88,36 +86,36 @@ rotate2 ( double *n, double *e, long int npts, double azimuth,
  *
  *********************************************************************/
 void
-rotate3 ( double *z, double *n, double *e, long int npts,
-	  double azimuth, double incidence,
-	  double *l, double *q, double *t )
+rotate3 (double *z, double *n, double *e, long int npts,
+         double azimuth, double incidence,
+         double *l, double *q, double *t)
 {
   double sina, cosa;
   double sini, cosi;
   double Z, N, E;
   long int i;
-  
+
   /* Convert azimuth to backazimuth needed for rotation matrix */
-  azimuth = ( azimuth >= 180.0 ) ? azimuth - 180.0 : azimuth + 180.0;
-  
+  azimuth = (azimuth >= 180.0) ? azimuth - 180.0 : azimuth + 180.0;
+
   azimuth *= (PI / 180.0);
   incidence *= (PI / 180.0);
-  
-  sina = sin ( azimuth );
-  cosa = cos ( azimuth );
-  sini = sin ( incidence );
-  cosi = cos ( incidence );
-  
+
+  sina = sin (azimuth);
+  cosa = cos (azimuth);
+  sini = sin (incidence);
+  cosi = cos (incidence);
+
   /* Apply rotation matrix */
-  for ( i=0; i < npts; i++ )
-    {
-      Z = z[i];
-      N = n[i];
-      E = e[i];
-      
-      l[i] = cosi * Z - sini * cosa * N - sini * sina * E;
-      q[i] = sini * Z + cosi * cosa * N + cosi * sina * E;
-      t[i] = sina * N - cosa * E;
-    }
-  
+  for (i = 0; i < npts; i++)
+  {
+    Z = z[i];
+    N = n[i];
+    E = e[i];
+
+    l[i] = cosi * Z - sini * cosa * N - sini * sina * E;
+    q[i] = sini * Z + cosi * cosa * N + cosi * sina * E;
+    t[i] = sina * N - cosa * E;
+  }
+
 } /* End of rotate3 */

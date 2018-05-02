@@ -16,29 +16,29 @@
  * modified: 2012.098
  **********************************************************************/
 
-#include <stdio.h>
-#include <string.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "complex.h"
 
-typedef struct {
+typedef struct
+{
   double real;
   double imag;
 } iircomplex;
 
 void applyfilter (double a1, double a2, double b1, double b2,
-		  int npts, int reverse, double *input, double *output);
+                  int npts, int reverse, double *input, double *output);
 void lowpass (double fc, double dt, int n, complexd *p, double *b);
 void highpass (double fc, double dt, int n, complexd *p, double *b);
-
 
 /**********************************************************************
  * iirfilter: filter a timeseries with a derived IIR definition
  *
  * Filter a timeseries using a Butterworth IIR digital filter determined
- * from high and low filter orders and cutoff frequencies.  Either the 
+ * from high and low filter orders and cutoff frequencies.  Either the
  * high or low order filter is optional or both may be used for a bandpass
  * filter.
  *
@@ -66,304 +66,309 @@ void highpass (double fc, double dt, int n, complexd *p, double *b);
  * Returns 0 on success and 1 on error.
  **********************************************************************/
 int
-iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
-	    void **output, char outputtype,
-	    int highorder, double highcutoff,
-	    int loworder, double lowcutoff,
-	    double samprate, int verbose )
+iirfilter (void *input, char inputtype, int samplecnt, int reverse,
+           void **output, char outputtype,
+           int highorder, double highcutoff,
+           int loworder, double lowcutoff,
+           double samprate, int verbose)
 {
-  int         *iptr;
-  float       *fptr;
-  double      *dptr;
-  int          idx;
-  int          outsampsize;       /* Output sample size in bytes */
-  complexd   pl[12], ph[12];    /* Filter poles */
-  double       b0l, b0h;          /* Filter gains */
-  double      *doutput;           /* Output samples as doubles */
-  double       a1, a2, b1, b2;
-  double       mean = 0.0;
-  
+  int *iptr;
+  float *fptr;
+  double *dptr;
+  int idx;
+  int outsampsize;         /* Output sample size in bytes */
+  complexd pl[12], ph[12]; /* Filter poles */
+  double b0l, b0h;         /* Filter gains */
+  double *doutput;         /* Output samples as doubles */
+  double a1, a2, b1, b2;
+  double mean = 0.0;
+
   /* Sanity check of input parameters */
-  if ( ! input || ! output )
+  if (!input || !output)
     return 1;
-  
-  if ( inputtype != 'i' && inputtype != 'f' && inputtype != 'd' )
-    {
-      fprintf (stderr, "[iirfilter] Unknown input data type: %d\n", inputtype);
-      return 1;
-    }
-  
-  switch ( outputtype )
-    {
-    case 'i': outsampsize = 4; break;
-    case 'f': outsampsize = 4; break;
-    case 'd': outsampsize = 8; break;
-    default:
-      fprintf (stderr, "[iirfilter] Unknown outputput data type: %d\n", outputtype);
-      return 1;
-    }
-  
+
+  if (inputtype != 'i' && inputtype != 'f' && inputtype != 'd')
+  {
+    fprintf (stderr, "[iirfilter] Unknown input data type: %d\n", inputtype);
+    return 1;
+  }
+
+  switch (outputtype)
+  {
+  case 'i':
+    outsampsize = 4;
+    break;
+  case 'f':
+    outsampsize = 4;
+    break;
+  case 'd':
+    outsampsize = 8;
+    break;
+  default:
+    fprintf (stderr, "[iirfilter] Unknown outputput data type: %d\n", outputtype);
+    return 1;
+  }
+
   /* Verify high-pass filter parameters */
-  if ( (highorder%2) != 0 || highorder < 0 || highorder > 13 )
+  if ((highorder % 2) != 0 || highorder < 0 || highorder > 13)
+  {
+    fprintf (stderr, "[iirfilter] Order of high-pass filter cannot be %d\n", highorder);
+    fprintf (stderr, "[iirfilter]   Order must be even and less than 13\n");
+    return 1;
+  }
+  else if (highorder)
+  {
+    if (highcutoff == 0.0)
     {
-      fprintf (stderr, "[iirfilter] Order of high-pass filter cannot be %d\n", highorder);
-      fprintf (stderr, "[iirfilter]   Order must be even and less than 13\n");
+      fprintf (stderr, "[iirfilter] High-pass cutoff frequency cannot be 0\n");
       return 1;
     }
-  else if ( highorder )
+
+    if (highcutoff > samprate / 2.0)
     {
-      if ( highcutoff == 0.0 )
-	{
-	  fprintf (stderr, "[iirfilter] High-pass cutoff frequency cannot be 0\n");
-	  return 1;
-	}
-      
-      if ( highcutoff > samprate/2.0 ) 
-	{
-	  fprintf (stderr, "[iirfilter] High-pass cutoff frequency cannot be higher than Nyquist (%f)\n", samprate/2.0);
-	  return 1;
-	}
+      fprintf (stderr, "[iirfilter] High-pass cutoff frequency cannot be higher than Nyquist (%f)\n", samprate / 2.0);
+      return 1;
     }
-  
+  }
+
   /* Verify low-pass filter parameters */
-  if ( (loworder%2) != 0 || loworder < 0 || loworder > 13 )
+  if ((loworder % 2) != 0 || loworder < 0 || loworder > 13)
+  {
+    fprintf (stderr, "[iirfilter] Order of low-pass filter cannot be %d\n", loworder);
+    fprintf (stderr, "[iirfilter]   Order must be even and less than 13\n");
+    return 1;
+  }
+  else if (loworder)
+  {
+    if (lowcutoff == 0.0)
     {
-      fprintf (stderr, "[iirfilter] Order of low-pass filter cannot be %d\n", loworder);
-      fprintf (stderr, "[iirfilter]   Order must be even and less than 13\n");
+      fprintf (stderr, "[iirfilter] Low-pass cutoff frequency cannot be 0\n");
       return 1;
     }
-  else if ( loworder )
+
+    if (lowcutoff > samprate / 2.0)
     {
-      if ( lowcutoff == 0.0 )
-	{
-	  fprintf (stderr, "[iirfilter] Low-pass cutoff frequency cannot be 0\n");
-	  return 1;
-	}
-      
-      if ( lowcutoff > samprate/2.0 ) 
-	{
-	  fprintf (stderr, "[iirfilter] Low-pass cutoff frequency cannot be higher than Nyquist (%f)\n", samprate/2.0);
-	  return 1;
-	}
-      
-      if ( highorder && lowcutoff <= highcutoff ) 
-	{
-	  fprintf (stderr, "[iirfilter] Low-pass cutoff frequency cannot be <= high-pass cutoff\n");
-	  return 1;
-	}
+      fprintf (stderr, "[iirfilter] Low-pass cutoff frequency cannot be higher than Nyquist (%f)\n", samprate / 2.0);
+      return 1;
     }
-  
+
+    if (highorder && lowcutoff <= highcutoff)
+    {
+      fprintf (stderr, "[iirfilter] Low-pass cutoff frequency cannot be <= high-pass cutoff\n");
+      return 1;
+    }
+  }
+
   /* Verify sampling rate */
-  if ( samprate <= 0.0 )
-    {
-      fprintf (stderr, "[iirfilter] Sampling rate must be greater than 0.0 (%f)\n", samprate);
-      return 1;
-    }
-  
+  if (samprate <= 0.0)
+  {
+    fprintf (stderr, "[iirfilter] Sampling rate must be greater than 0.0 (%f)\n", samprate);
+    return 1;
+  }
+
   /* Get high-pass filter poles if necessary */
-  if ( highorder )
-    {
-      highpass (highcutoff, 1.0/samprate, highorder, ph, &b0h);
-      
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Gain of high-pass filter: %f\n", b0h);
-    }
-  
+  if (highorder)
+  {
+    highpass (highcutoff, 1.0 / samprate, highorder, ph, &b0h);
+
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Gain of high-pass filter: %f\n", b0h);
+  }
+
   /* Get low-pass filter poles if necessary */
-  if ( loworder )
-    {
-      lowpass (lowcutoff, 1.0/samprate, loworder, pl, &b0l);
-      
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Gain of low-pass filter: %f\n", b0l);
-    }
-  
+  if (loworder)
+  {
+    lowpass (lowcutoff, 1.0 / samprate, loworder, pl, &b0l);
+
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Gain of low-pass filter: %f\n", b0l);
+  }
+
   /* Allocate internal filter output buffer */
-  if ( (doutput = (double *) malloc (sizeof(double) * samplecnt)) == NULL )
-    {
-      fprintf (stderr, "[iirfilter] Error allocating filter buffer\n");
-      return 1;
-    }
-  
+  if ((doutput = (double *)malloc (sizeof (double) * samplecnt)) == NULL)
+  {
+    fprintf (stderr, "[iirfilter] Error allocating filter buffer\n");
+    return 1;
+  }
+
   /* Demean the input data while copying to internal filter buffer (doutput) */
-  switch ( inputtype )
-    {
-    case 'i':
-      iptr = (int *) input;
-      
-      mean = (double) (*iptr);
-      for (idx=1; idx < samplecnt; idx++)
-	mean = mean + ( *(iptr+idx) - mean) / (idx + 1);
-      
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Removing mean value of %f\n", mean);
-      
-      for (idx=0; idx < samplecnt; idx++)
-        *(doutput+idx) = *(iptr+idx) - mean;
-      
-      break;
-      
-    case 'f':
-      fptr = (float *) input;
-      
-      mean = (double) (*fptr);
-      for (idx=1; idx < samplecnt; idx++)
-	mean = mean + ( *(fptr+idx) - mean) / (idx + 1);
-      
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Removing mean value of %f\n", mean);
-      
-      for (idx=0; idx < samplecnt; idx++)
-        *(doutput+idx) = *(fptr+idx) - mean;
-      
-      break;
-      
-    case 'd':
-      dptr = (double *) input;
-      
-      mean = *dptr;
-      for (idx=1; idx < samplecnt; idx++)
-	mean = mean + ( *(dptr+idx) - mean) / (idx + 1);
-      
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Removing mean value of %f\n", mean);
-      
-      for (idx=0; idx < samplecnt; idx++)
-        *(doutput+idx) = *(dptr+idx) - mean;
-      
-      break;
-    }
-  
+  switch (inputtype)
+  {
+  case 'i':
+    iptr = (int *)input;
+
+    mean = (double)(*iptr);
+    for (idx = 1; idx < samplecnt; idx++)
+      mean = mean + (*(iptr + idx) - mean) / (idx + 1);
+
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Removing mean value of %f\n", mean);
+
+    for (idx = 0; idx < samplecnt; idx++)
+      *(doutput + idx) = *(iptr + idx) - mean;
+
+    break;
+
+  case 'f':
+    fptr = (float *)input;
+
+    mean = (double)(*fptr);
+    for (idx = 1; idx < samplecnt; idx++)
+      mean = mean + (*(fptr + idx) - mean) / (idx + 1);
+
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Removing mean value of %f\n", mean);
+
+    for (idx = 0; idx < samplecnt; idx++)
+      *(doutput + idx) = *(fptr + idx) - mean;
+
+    break;
+
+  case 'd':
+    dptr = (double *)input;
+
+    mean = *dptr;
+    for (idx = 1; idx < samplecnt; idx++)
+      mean = mean + (*(dptr + idx) - mean) / (idx + 1);
+
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Removing mean value of %f\n", mean);
+
+    for (idx = 0; idx < samplecnt; idx++)
+      *(doutput + idx) = *(dptr + idx) - mean;
+
+    break;
+  }
+
   /* Filter the data: filtering is implemented as a cascade of second order filters */
 
   /*  Apply high-pass filter using poles ph
    *    Numerator polynomial is z**2 - 2*z + 1 */
-  if ( highorder )
+  if (highorder)
+  {
+    for (idx = 0; idx < highorder; idx += 2)
     {
-      for ( idx=0 ; idx < highorder ; idx += 2 )
-	{
-	  a1 = -2*ph[idx].real;
-	  a2 = ph[idx].real*ph[idx].real + ph[idx].imag*ph[idx].imag;
-	  b1 = -2;
-	  b2 = 1;
-	  
-	  applyfilter (a1, a2, b1, b2, samplecnt, 0, doutput, doutput);
-	}
-      
-      /* Compensate for filter gain */
-      for ( idx=0 ; idx < samplecnt ; idx++ )
-	doutput[idx] = b0h * doutput[idx];
-      
-      /* Apply filter in reverse order to remove phase distortion */
-      if ( reverse )
-	{
-	  for ( idx=0 ; idx < highorder ; idx += 2 )
-	    {
-	      a1 = -2*ph[idx].real;
-	      a2 = ph[idx].real*ph[idx].real + ph[idx].imag*ph[idx].imag;
-	      b1 = -2;
-	      b2 = 1;
-	      
-	      applyfilter (a1, a2, b1, b2, samplecnt, 1, doutput, doutput);
-	    }
-	  
-	  /* Compensate for filter gain */
-	  for ( idx=0 ; idx < samplecnt ; idx++ )
-	    doutput[idx] = b0h * doutput[idx];
-	}
+      a1 = -2 * ph[idx].real;
+      a2 = ph[idx].real * ph[idx].real + ph[idx].imag * ph[idx].imag;
+      b1 = -2;
+      b2 = 1;
+
+      applyfilter (a1, a2, b1, b2, samplecnt, 0, doutput, doutput);
     }
-  
+
+    /* Compensate for filter gain */
+    for (idx = 0; idx < samplecnt; idx++)
+      doutput[idx] = b0h * doutput[idx];
+
+    /* Apply filter in reverse order to remove phase distortion */
+    if (reverse)
+    {
+      for (idx = 0; idx < highorder; idx += 2)
+      {
+        a1 = -2 * ph[idx].real;
+        a2 = ph[idx].real * ph[idx].real + ph[idx].imag * ph[idx].imag;
+        b1 = -2;
+        b2 = 1;
+
+        applyfilter (a1, a2, b1, b2, samplecnt, 1, doutput, doutput);
+      }
+
+      /* Compensate for filter gain */
+      for (idx = 0; idx < samplecnt; idx++)
+        doutput[idx] = b0h * doutput[idx];
+    }
+  }
+
   /* Apply low-pass filter using poles pl
    *   Numerator polynomial is z**2 + 2*z + 1 */
-  if ( loworder )
+  if (loworder)
+  {
+    for (idx = 0; idx < loworder; idx += 2)
     {
-      for ( idx=0 ; idx < loworder ; idx += 2 )
-	{
-	  a1 = -2*pl[idx].real;
-	  a2 = pl[idx].real*pl[idx].real + pl[idx].imag*pl[idx].imag;
-	  b1 = 2;
-	  b2 = 1;
-	  
-	  applyfilter (a1, a2, b1, b2, samplecnt, 0, doutput, doutput);
-	}
-      
+      a1 = -2 * pl[idx].real;
+      a2 = pl[idx].real * pl[idx].real + pl[idx].imag * pl[idx].imag;
+      b1 = 2;
+      b2 = 1;
+
+      applyfilter (a1, a2, b1, b2, samplecnt, 0, doutput, doutput);
+    }
+
+    /* Compensate for filter gain */
+    for (idx = 0; idx < samplecnt; idx++)
+      doutput[idx] = b0l * doutput[idx];
+
+    /* Apply filter in reverse order to remove phase distortion */
+    if (reverse)
+    {
+      for (idx = 0; idx < loworder; idx += 2)
+      {
+        a1 = -2 * pl[idx].real;
+        a2 = pl[idx].real * pl[idx].real + pl[idx].imag * pl[idx].imag;
+        b1 = 2;
+        b2 = 1;
+
+        applyfilter (a1, a2, b1, b2, samplecnt, 1, doutput, doutput);
+      }
+
       /* Compensate for filter gain */
-      for ( idx=0 ; idx < samplecnt ; idx++ )
-	doutput[idx] = b0l * doutput[idx];
-      
-      /* Apply filter in reverse order to remove phase distortion */
-      if ( reverse )
-	{
-	  for ( idx=0 ; idx < loworder ; idx += 2 )
-	    {
-	      a1 = -2*pl[idx].real;
-	      a2 = pl[idx].real*pl[idx].real + pl[idx].imag*pl[idx].imag;
-	      b1 = 2;
-	      b2 = 1;
-	      
-	      applyfilter (a1, a2, b1, b2, samplecnt, 1, doutput, doutput);
-	    }
-	  
-	  /* Compensate for filter gain */
-	  for ( idx=0 ; idx < samplecnt ; idx++ )
-	    doutput[idx] = b0l * doutput[idx];
-	}
+      for (idx = 0; idx < samplecnt; idx++)
+        doutput[idx] = b0l * doutput[idx];
     }
-  
+  }
+
   /* (Re)Allocate output buffer */
-  if ( ! *output )
+  if (!*output)
+  {
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Allocating output data buffer\n");
+
+    if ((*output = (void *)malloc (outsampsize * samplecnt)) == NULL)
     {
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Allocating output data buffer\n");
-      
-      if ( (*output = (void *) malloc (outsampsize * samplecnt)) == NULL )
-	{
-	  fprintf (stderr, "[iirfilter] Error allocating output buffer\n");
-	  return 1;
-	}
+      fprintf (stderr, "[iirfilter] Error allocating output buffer\n");
+      return 1;
     }
+  }
   else
+  {
+    if (verbose > 1)
+      fprintf (stderr, "[iirfilter] Reallocating output data buffer\n");
+
+    if ((*output = (void *)realloc (*output, outsampsize * samplecnt)) == NULL)
     {
-      if ( verbose > 1 )
-	fprintf (stderr, "[iirfilter] Reallocating output data buffer\n");
-      
-      if ( (*output = (void *) realloc (*output, outsampsize * samplecnt)) == NULL )
-	{
-	  fprintf (stderr, "[iirfilter] Error allocating output buffer\n");
-	  return 1;
-	}
+      fprintf (stderr, "[iirfilter] Error allocating output buffer\n");
+      return 1;
     }
+  }
 
   /* Copy samples into output buffer rounding integer data types, no test for overflow */
   /* Add mean back into sample values while copying */
-  switch ( outputtype )
+  switch (outputtype)
+  {
+  case 'i':
+    for (idx = 0; idx < samplecnt; idx++)
     {
-    case 'i':
-      for ( idx=0; idx < samplecnt; idx++ ) 
-	{
-	  *((int *)*output+idx) = (int) (*(doutput+idx) + mean + 0.5);
-	}
-      break;
-    case 'f':
-      for ( idx=0; idx < samplecnt; idx++ )
-	{
-	  *((float *)*output+idx) = (float) (*(doutput+idx) + mean);
-	}
-      break;
-    case 'd':
-      for ( idx=0; idx < samplecnt; idx++ ) 
-	{
-	  *((double *)*output+idx) = (double) (*(doutput+idx) + mean);
-	}
-      break;
+      *((int *)*output + idx) = (int)(*(doutput + idx) + mean + 0.5);
     }
-  
-  if ( doutput )
-    free (doutput);
-  
-  return 0;
-}  /* End of iirfilter() */
+    break;
+  case 'f':
+    for (idx = 0; idx < samplecnt; idx++)
+    {
+      *((float *)*output + idx) = (float)(*(doutput + idx) + mean);
+    }
+    break;
+  case 'd':
+    for (idx = 0; idx < samplecnt; idx++)
+    {
+      *((double *)*output + idx) = (double)(*(doutput + idx) + mean);
+    }
+    break;
+  }
 
+  if (doutput)
+    free (doutput);
+
+  return 0;
+} /* End of iirfilter() */
 
 /**********************************************************************
  * applyfilter:
@@ -380,35 +385,34 @@ iirfilter ( void *input, char inputtype, int samplecnt, int reverse,
  **********************************************************************/
 void
 applyfilter (double a1, double a2, double b1, double b2,
-	     int npts, int reverse, double *input, double *output)
+             int npts, int reverse, double *input, double *output)
 {
   double d1 = 0.0;
   double d2 = 0.0;
   double out;
   int i;
-  
-  if ( ! reverse )
-    {
-      for ( i=0 ; i<npts ; i++ )
-	{
-	  out = input[i] + d1;
-	  d1 = b1*input[i] - a1*out + d2;
-	  d2 = b2*input[i] - a2*out;
-	  output[i] = out;
-	}
-    }
-  else
-    {
-      for ( i=npts-1 ; i>=0 ; i-- )
-	{
-	  out = input[i] + d1;
-	  d1 = b1*input[i] - a1*out + d2;
-	  d2 = b2*input[i] - a2*out;
-	  output[i] = out;
-	}
-    }
-}
 
+  if (!reverse)
+  {
+    for (i = 0; i < npts; i++)
+    {
+      out       = input[i] + d1;
+      d1        = b1 * input[i] - a1 * out + d2;
+      d2        = b2 * input[i] - a2 * out;
+      output[i] = out;
+    }
+  }
+  else
+  {
+    for (i = npts - 1; i >= 0; i--)
+    {
+      out       = input[i] + d1;
+      d1        = b1 * input[i] - a1 * out + d2;
+      d2        = b2 * input[i] - a2 * out;
+      output[i] = out;
+    }
+  }
+}
 
 /**********************************************************************
  * lowpass:
@@ -428,48 +432,47 @@ applyfilter (double a1, double a2, double b1, double b2,
  **********************************************************************/
 void
 lowpass (double fc, double dt, int n, complexd *p, double *b)
-{  
+{
   complexd one, x, y;
   double wcp, wc, b0;
   int i, i1;
-  
-  wcp = 2 * fc * PI;
-  wc = (2.0/dt) * tan(wcp*dt/2.0);
+
+  wcp      = 2 * fc * PI;
+  wc       = (2.0 / dt) * tan (wcp * dt / 2.0);
   one.real = 1.0;
   one.imag = 0.0;
-  
+
   /* Calculate position of poles for continuous filter */
-  for ( i=0 ; i < n ; i += 2 )
-    {
-      i1 = i + 1;
-      p[i].real = -wc * cos(i1*PI/(2*n));
-      p[i].imag = wc * sin(i1*PI/(2*n));
-      p[i+1] = cmplxconj(p[i]);
-    }
-  
+  for (i = 0; i < n; i += 2)
+  {
+    i1        = i + 1;
+    p[i].real = -wc * cos (i1 * PI / (2 * n));
+    p[i].imag = wc * sin (i1 * PI / (2 * n));
+    p[i + 1]  = cmplxconj (p[i]);
+  }
+
   /* Calculate position of poles for discrete filter using
    * the bilinear transformation */
-  for ( i=0 ; i < n ; i += 2 )
-    {
-      p[i] = cmplxdmul(dt/2,p[i]);
-      x = cmplxadd(one,p[i]);
-      y = cmplxsub(one,p[i]);
-      p[i] = cmplxdiv(x,y);
-      p[i+1] = cmplxconj(p[i]);
-    }
-  
+  for (i = 0; i < n; i += 2)
+  {
+    p[i]     = cmplxdmul (dt / 2, p[i]);
+    x        = cmplxadd (one, p[i]);
+    y        = cmplxsub (one, p[i]);
+    p[i]     = cmplxdiv (x, y);
+    p[i + 1] = cmplxconj (p[i]);
+  }
+
   /* Calculate filter gain */
   b0 = 1.0;
-  for ( i=0 ; i < n ; i +=2 )
-    {
-      x = cmplxsub(one,p[i]);
-      y = cmplxsub(one,p[i+1]);
-      x = cmplxmul(x,y);
-      b0 = b0 * 4.0 / x.real;
-    }
+  for (i = 0; i < n; i += 2)
+  {
+    x  = cmplxsub (one, p[i]);
+    y  = cmplxsub (one, p[i + 1]);
+    x  = cmplxmul (x, y);
+    b0 = b0 * 4.0 / x.real;
+  }
   *b = 1.0 / b0;
 }
-
 
 /**********************************************************************
  * highpass:
@@ -489,39 +492,39 @@ lowpass (double fc, double dt, int n, complexd *p, double *b)
  **********************************************************************/
 void
 highpass (double fc, double dt, int n, complexd *p, double *b)
-{  
+{
   complexd one, x, y;
-  double wcp, wc,  alpha, b0;
+  double wcp, wc, alpha, b0;
   int i;
-  
-  wcp = 2 * fc * PI;
-  wc = (2.0/dt) * tan(wcp*dt/2.0);
-  alpha = cos(wc*dt);
+
+  wcp      = 2 * fc * PI;
+  wc       = (2.0 / dt) * tan (wcp * dt / 2.0);
+  alpha    = cos (wc * dt);
   one.real = 1.0;
   one.imag = 0.0;
-  
+
   /* Compute poles for low-pass filter  */
-  lowpass (fc, dt, n, p, &b0) ;
-  
+  lowpass (fc, dt, n, p, &b0);
+
   /* Now find poles for high-pass filter */
-  for ( i=0 ; i < n ; i += 2 )
-    {
-      x = cmplxdmul (alpha,one) ;
-      x = cmplxsub (x,p[i]) ;
-      y = cmplxdmul (alpha,p[i]) ;
-      y = cmplxsub(one,y) ;
-      p[i] = cmplxdiv(x,y) ;
-      p[i+1] = cmplxconj(p[i]) ;
-    }
-  
+  for (i = 0; i < n; i += 2)
+  {
+    x        = cmplxdmul (alpha, one);
+    x        = cmplxsub (x, p[i]);
+    y        = cmplxdmul (alpha, p[i]);
+    y        = cmplxsub (one, y);
+    p[i]     = cmplxdiv (x, y);
+    p[i + 1] = cmplxconj (p[i]);
+  }
+
   /* Calculate gain for high-pass filter */
   b0 = 1.0;
-  for ( i=0 ; i < n ; i += 2 )
-    {
-      x = cmplxadd(one,p[i]);
-      y = cmplxadd(one,p[i+1]);
-      x = cmplxmul(x,y);
-      b0 = b0 * 4.0 / x.real;
-    }
+  for (i = 0; i < n; i += 2)
+  {
+    x  = cmplxadd (one, p[i]);
+    y  = cmplxadd (one, p[i + 1]);
+    x  = cmplxmul (x, y);
+    b0 = b0 * 4.0 / x.real;
+  }
   *b = 1.0 / b0;
 }

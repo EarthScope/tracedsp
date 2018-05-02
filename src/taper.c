@@ -6,9 +6,9 @@
  * Modified: 2011.024
  *********************************************************************/
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
 
 #include "taper.h"
 
@@ -50,71 +50,71 @@ taper (double *data, int npts, double width, int type)
   double factor;
   int widthpts;
   int idx;
-  
+
   /* Sanity checks */
-  if ( ! data )
-    {
-      fprintf (stderr, "taper(): No data buffer specified\n");
-      return -1;
-    }
-  
-  if ( width > 0.5 )
-    {
-      fprintf (stderr, "taper(): Window width (%g) cannot be larger than 0.5\n",
-	       width);
-      return -1;
-    }
-  
+  if (!data)
+  {
+    fprintf (stderr, "taper(): No data buffer specified\n");
+    return -1;
+  }
+
+  if (width > 0.5)
+  {
+    fprintf (stderr, "taper(): Window width (%g) cannot be larger than 0.5\n",
+             width);
+    return -1;
+  }
+
   /* Calculate number of samples in window width */
   widthpts = (npts * width);
-  
-  if ( npts <= 0 )
+
+  if (npts <= 0)
     return 0;
-  
+
   /* Calculate omega */
-  switch ( type )
-    {
-    case TAPER_HANNING:
-    case TAPER_HAMMING:
-      omega = PI / widthpts;
-      break;
-    case TAPER_COSINE:
-      omega = PI / (2 * widthpts);
-      break;
-    default:
-      fprintf (stderr, "taper(): Unrecognized taper type: %d\n", type);
-      return -1;
-      break;
-    }
-  
+  switch (type)
+  {
+  case TAPER_HANNING:
+  case TAPER_HAMMING:
+    omega = PI / widthpts;
+    break;
+  case TAPER_COSINE:
+    omega = PI / (2 * widthpts);
+    break;
+  default:
+    fprintf (stderr, "taper(): Unrecognized taper type: %d\n", type);
+    return -1;
+    break;
+  }
+
   /* Apply taper to both ends of trace */
-  switch ( type )
+  switch (type)
+  {
+  case TAPER_HANNING:
+    for (idx = 0; idx < widthpts; idx++)
     {
-    case TAPER_HANNING:
-      for ( idx=0 ; idx < widthpts ; idx++ )
-	{
-	  factor = (0.50 - 0.50 * cos(omega * idx));
-	  data[idx] *= factor;
-	  data[npts - 1 - idx] *= factor;
-	}
-      break;
-    case TAPER_HAMMING:
-      for ( idx=0 ; idx < widthpts ; idx++ )
-	{
-	  factor = (0.54 - 0.46 * cos(omega * idx));
-	  data[idx] *= factor;
-	  data[npts - 1 - idx] *= factor;
-	}
-      break;
-    case TAPER_COSINE:
-      for ( idx=0 ; idx < widthpts ; idx++ )
-	{
-	  factor = sin(omega * (idx)); /* Matches SAC "cosine" tapering */
-	  data[idx] *= factor;
-	  data[npts - 1 - idx] *= factor;
-	}
-      break;
+      factor = (0.50 - 0.50 * cos (omega * idx));
+      data[idx] *= factor;
+      data[npts - 1 - idx] *= factor;
     }
-  
+    break;
+  case TAPER_HAMMING:
+    for (idx = 0; idx < widthpts; idx++)
+    {
+      factor = (0.54 - 0.46 * cos (omega * idx));
+      data[idx] *= factor;
+      data[npts - 1 - idx] *= factor;
+    }
+    break;
+  case TAPER_COSINE:
+    for (idx = 0; idx < widthpts; idx++)
+    {
+      factor = sin (omega * (idx)); /* Matches SAC "cosine" tapering */
+      data[idx] *= factor;
+      data[npts - 1 - idx] *= factor;
+    }
+    break;
+  }
+
   return widthpts;
-}  /* End of taper() */
+} /* End of taper() */

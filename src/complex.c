@@ -8,9 +8,9 @@
  * modified: 2012.098
  *********************************************************************/
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 
 #include "complex.h"
 
@@ -50,7 +50,7 @@ complexd
 cmplxmul (complexd c1, complexd c2)
 {
   complexd c3;
-  
+
   c3.real = (c1.real * c2.real) - (c1.imag * c2.imag);
   c3.imag = (c1.real * c2.imag) + (c1.imag * c2.real);
   return (c3);
@@ -88,39 +88,41 @@ cmplxsub (complexd c1, complexd c2)
 double
 cmplxabs (complexd c)
 {
-  return (sqrt((double)((c.real*c.real) + (c.imag*c.imag))));
-} 
+  return (sqrt ((double)((c.real * c.real) + (c.imag * c.imag))));
+}
 
 double
 cmplxang (complexd c)
 {
   double d = 1.0;
 
-  if ( c.imag < 1.0e-14 && c.imag > -1.0e-14 && fabs(c.real) > 1.0e-7 )
-    {
-      /* d = acos(c.real/cmplxabs(c)); */
-      if ( c.real > 0 ) 
-	d = 0;
-      else if ( c.real < 0 ) 
-	d = PI;
-    }
-  else if (c.real < 1.0e-14 && c.real > -1.0e-14 && fabs(c.imag) > 1.0e-7 )
-    {
-      /* d = asin(c.imag/cmplxabs(c)); */
-      if ( c.imag > 0 ) 
-	d = PI / 2;
-      else if ( c.real < 0 ) 
-	d = -PI / 2;
-    }
+  if (c.imag < 1.0e-14 && c.imag > -1.0e-14 && fabs (c.real) > 1.0e-7)
+  {
+    /* d = acos(c.real/cmplxabs(c)); */
+    if (c.real > 0)
+      d = 0;
+    else if (c.real < 0)
+      d = PI;
+  }
+  else if (c.real < 1.0e-14 && c.real > -1.0e-14 && fabs (c.imag) > 1.0e-7)
+  {
+    /* d = asin(c.imag/cmplxabs(c)); */
+    if (c.imag > 0)
+      d = PI / 2;
+    else if (c.real < 0)
+      d = -PI / 2;
+  }
   else
+  {
+    d = atan (c.imag / c.real);
+    if (c.real < 0.0)
     {
-      d = atan(c.imag/c.real);
-      if (c.real < 0.0)
-	{
-	  if (c.imag < 0.0) d -= PI;
-	  else              d += PI;
-	}
+      if (c.imag < 0.0)
+        d -= PI;
+      else
+        d += PI;
     }
+  }
 
   return (d);
 }
@@ -131,20 +133,20 @@ cmplxsqrt (complexd c)
 {
   double sqrtsave, angle;
 
-  sqrtsave = sqrt (cmplxabs(c));
-  angle = cmplxang(c);
-  
-  c.real = sqrtsave * cos (angle/2.0);
-  c.imag = sqrtsave * sin (angle/2.0);
+  sqrtsave = sqrt (cmplxabs (c));
+  angle    = cmplxang (c);
+
+  c.real = sqrtsave * cos (angle / 2.0);
+  c.imag = sqrtsave * sin (angle / 2.0);
 
   if (c.real < 0.0)
-    {
-      c.real = -c.real;
-      c.imag = -c.imag;
-    }
+  {
+    c.real = -c.real;
+    c.imag = -c.imag;
+  }
   else if (c.real < 1.0e-14 && c.real > -1.0e-14 && c.imag < 0.0)
     c.imag = -c.imag;
-  
+
   return (c);
 }
 
@@ -154,20 +156,20 @@ cmplxdiv (complexd c1, complexd c2)
 {
   complexd c;
   double d;
-  
+
   if (c2.real == 0.0 && c2.imag == 0.0)
-    {
-      fprintf(stderr, "cmplxdiv(): complex divide by zero\n");
-      c.real = c.imag = 0.0; 
-    }
+  {
+    fprintf (stderr, "cmplxdiv(): complex divide by zero\n");
+    c.real = c.imag = 0.0;
+  }
   else
-    {
-      d = c2.real*c2.real + c2.imag*c2.imag;
-      
-      c.real = (c1.real*c2.real + c1.imag*c2.imag) / d;
-      c.imag = (c2.real*c1.imag - c1.real*c2.imag) / d;
-    }
-  
+  {
+    d = c2.real * c2.real + c2.imag * c2.imag;
+
+    c.real = (c1.real * c2.real + c1.imag * c2.imag) / d;
+    c.imag = (c2.real * c1.imag - c1.real * c2.imag) / d;
+  }
+
   return (c);
 }
 
@@ -176,10 +178,10 @@ complexd
 cmplxlog (complexd c)
 {
   complexd c1;
-  
-  c1.real = log (cmplxabs(c));
+
+  c1.real = log (cmplxabs (c));
   c1.imag = cmplxang (c);
-  
+
   return (c1);
 }
 
@@ -188,18 +190,18 @@ complexd
 cmplxexp (complexd c)
 {
   double d;
-  
+
   if (c.real == 0.0)
     d = 1.0;
   else
-    d = exp(c.real);
-  
+    d = exp (c.real);
+
   if (c.imag == 0.0)
-    {
-      c.real = d;
-      return (c);
-    }
-  
+  {
+    c.real = d;
+    return (c);
+  }
+
   c.real = d * cos (c.imag);
   c.imag = d * sin (c.imag);
 
@@ -213,11 +215,11 @@ cmplxpow (complexd c, double d)
   if (c.real == 0.0 && c.imag == 0.0)
     return (c);
 
-  c = cmplxlog (c);
-  c.real = d*c.real;
-  c.imag = d*c.imag;
-  
-  return (cmplxexp(c));
+  c      = cmplxlog (c);
+  c.real = d * c.real;
+  c.imag = d * c.imag;
+
+  return (cmplxexp (c));
 }
 
 /* Negate complex number */
