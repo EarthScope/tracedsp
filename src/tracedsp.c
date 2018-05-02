@@ -1,5 +1,5 @@
 /***************************************************************************
- * tracedsp.c - time series processor for Mini-SEED and SAC data
+ * tracedsp.c - time series processor for miniSEED and SAC data
  *
  * Opens user specified files, parses the input data, applys
  * processing steps to the timeseries and writes the data.  Kapeesh?
@@ -36,7 +36,7 @@
 struct filelink
 {
   char *filename;
-  int format; /* File format: 1 = Mini-SEED, 2 = SAC (alpha or binary) */
+  int format; /* File format: 1 = miniSEED, 2 = SAC (alpha or binary) */
   struct filelink *next;
 };
 
@@ -185,9 +185,9 @@ static int packreclen     = -1;   /* SEED record length for output data */
 static int packencoding   = 4;    /* SEED encoding format for output data */
 static char *encodingstr  = 0;    /* SEED encoding format string */
 static int byteorder      = -1;   /* Byte order of output data, use libmseed default */
-static int srateblkt      = 0;    /* Add blockette 100 to Mini-SEED */
-static flag dataformat    = 2;    /* 0 = No output, 1 = Mini-SEED, 2 = SAC */
-static flag informat      = 0;    /* 0 = auto detect, 1 = Mini-SEED, 2 = SAC */
+static int srateblkt      = 0;    /* Add blockette 100 to miniSEED */
+static flag dataformat    = 2;    /* 0 = No output, 1 = miniSEED, 2 = SAC */
+static flag informat      = 0;    /* 0 = auto detect, 1 = miniSEED, 2 = SAC */
 static flag sacinformat   = 0;    /* 0=auto, 1=alpha, 2=binary (host), 3=binary (LE), 4=binary (BE) */
 static flag sacoutformat  = 2;    /* 1=alpha, 2=binary (host), 3=binary (LE), 4=binary (BE) */
 static char *sacnet       = 0;    /* SAC network code override */
@@ -263,11 +263,11 @@ main (int argc, char **argv)
   flp = filelist;
   while (flp != 0)
   {
-    /* Read Mini-SEED file */
+    /* Read miniSEED file */
     if (flp->format == 1)
     {
       if (verbose >= 2)
-        fprintf (stderr, "Processing Mini-SEED: %s\n", flp->filename);
+        fprintf (stderr, "Processing miniSEED: %s\n", flp->filename);
 
       sampsread = readMSEED (flp->filename, mstl);
 
@@ -490,7 +490,7 @@ main (int argc, char **argv)
         if (dataformat == 1)
         {
           if (writeMSEED (id, seg, outputfile) < 0)
-            fprintf (stderr, "Error writing Mini-SEED\n");
+            fprintf (stderr, "Error writing miniSEED\n");
         }
         else if (dataformat == 2)
         {
@@ -1557,7 +1557,7 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 /***************************************************************************
  * readMSEED:
  *
- * Read file containing Mini-SEED and add data to the supplied MSTraceList.
+ * Read file containing miniSEED and add data to the supplied MSTraceList.
  *
  * Returns the number of samples read on success and -1 on error.
  ***************************************************************************/
@@ -2216,7 +2216,7 @@ readAlphaDataSAC (FILE *ifp, float *data, int datacnt)
 /***************************************************************************
  * writeMSEED:
  *
- * Write data buffer to output file as Mini-SEED, converting sample
+ * Write data buffer to output file as miniSEED, converting sample
  * type as required by the encoding format.
  *
  * Returns the number of samples written, -1 on error.
@@ -2305,7 +2305,7 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
   mst->sampletype  = seg->sampletype;
 
   if (verbose)
-    fprintf (stderr, "Writing Mini-SEED for %.8s.%.8s.%.8s.%.8s\n",
+    fprintf (stderr, "Writing miniSEED for %.8s.%.8s.%.8s.%.8s\n",
              mst->network, mst->station, mst->location, mst->channel);
 
   if (!outputfile)
@@ -4369,7 +4369,7 @@ addFile (char *filename)
 
   fclose (ifp);
 
-  /* Set input format or check for Mini-SEED, otherwise default to SAC */
+  /* Set input format or check for miniSEED, otherwise default to SAC */
   if (informat)
     newlp->format = informat;
   else if (MS_ISVALIDHEADER (header))
@@ -4819,7 +4819,7 @@ recordHandler (char *record, int reclen, void *vofp)
   {
     if (fwrite (record, reclen, 1, ofp) != 1)
     {
-      fprintf (stderr, "Error writing Mini-SEED to output file\n");
+      fprintf (stderr, "Error writing miniSEED to output file\n");
     }
 
     outputbytes += reclen;
@@ -4844,16 +4844,16 @@ usage (void)
            " -s            Print a basic summary after reading all input files\n"
            " -tt secs      Specify a time tolerance for continuous traces\n"
            " -rt diff      Specify a sample rate tolerance for continuous traces\n"
-           " -ts time      Limit Mini-SEED input to records that start after time\n"
-           " -te time      Limit Mini-SEED input to records that end before time\n"
+           " -ts time      Limit miniSEED input to records that start after time\n"
+           " -te time      Limit miniSEED input to records that end before time\n"
            "                 time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
            " -I[ms]        Force input to be considered (m)iniSEED or (s)AC\n"
            "                 By default the input format is autodetected\n"
-           " -MSEED        Write output as Mini-SEED instead of default SAC\n"
+           " -MSEED        Write output as miniSEED instead of default SAC\n"
            " -Mr bytes     Specify record length in bytes, default is autodetection\n"
            " -Me encoding  Specify encoding format of data samples for input data\n"
-           " -MR bytes     Specify record length for output Mini-SEED, default is 4096\n"
-           /*	   " -S            Include Blockette 1001 (hi-res sample rate) in output Mini-SEED\n"*/
+           " -MR bytes     Specify record length for output miniSEED, default is 4096\n"
+           /*	   " -S            Include Blockette 1001 (hi-res sample rate) in output miniSEED\n"*/
            " -ME encoding  Encoding format for SEED output data, default is 4 (floats)\n"
            " -Sf format    Specify SAC output format (default is 2:binary)\n"
            "                 1=alpha, 2=binary (host byte order),\n"
@@ -4904,6 +4904,6 @@ usage (void)
            "                 Rotate component sets, 2-D or 3-D\n"
            " -STATS        Add simple stats to processing log, verbose to print\n"
            "\n"
-           " file#         File of input Mini-SEED or SAC\n"
+           " file#         File of input miniSEED or SAC\n"
            "\n");
 } /* End of usage() */

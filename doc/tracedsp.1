@@ -1,6 +1,6 @@
 .TH TRACEDSP 1 2018/05/02
 .SH NAME
-Trace DSP, a time series processor for SAC and Mini-SEED data
+Trace DSP, a time series processor for SAC and miniSEED data
 
 .SH SYNOPSIS
 .nf
@@ -9,7 +9,7 @@ tracedsp [options] file1 [file2 file3 ...]
 .fi
 .SH DESCRIPTION
 \fBtracedsp\fP is a digital signal processor for time series data in
-SAC and Mini-SEED format.  For each continuous time series in the
+SAC and miniSEED format.  For each continuous time series in the
 input data the specified operations will be performed in order.
 
 If '-' is specified standard input will be read.  Multiple input files
@@ -48,13 +48,13 @@ sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
 0.0001).
 
 .IP "-ts \fItime\fP"
-Limit processing to Mini-SEED records that start after \fItime\fP.
+Limit processing to miniSEED records that start after \fItime\fP.
 The format of the \fItime\fP arguement
 is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.).
 
 .IP "-te \fItime\fP"
-Limit processing to Mini-SEED records that end before \fItime\fP.
+Limit processing to miniSEED records that end before \fItime\fP.
 The format of the \fItime\fP arguement
 is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either
 commas (,), colons (:) or periods (.).
@@ -65,11 +65,11 @@ default the input format is auto-detected.  This override takes effect
 for all files specified on the command line after the option.
 
 .IP "-MSEED"
-Write output as Mini-SEED instead of SAC.
+Write output as miniSEED instead of SAC.
 
 .IP "-Mr \fIbytes\fP"
 Specify the input record length in \fIbytes\fP.  By default the
-length of the first Mini-SEED record is automatically detected, this
+length of the first miniSEED record is automatically detected, this
 option forces the record length.  The option is required when the
 input records do not contain a 1000 Blockette.
 
@@ -78,11 +78,11 @@ Specify the data encoding format.  These encoding values are the same
 as those specified in the SEED 1000 Blockette.
 
 .IP "-MR \fIbytes\fP"
-Specify the record length in \fIbytes\fP for output Mini-SEED data.
+Specify the record length in \fIbytes\fP for output miniSEED data.
 The default record length will be 4096 bytes.
 
 .IP "-ME \fIencoding\fP"
-Specify the \fIencoding\fP format output Mini-SEED data.  This can be one of:
+Specify the \fIencoding\fP format output miniSEED data.  This can be one of:
 .nf
 3  : 32-bit integers
 4  : 32-bit floating point numbers
@@ -343,7 +343,7 @@ maximum, mean, standard deviation and RMS.
 
 .SH METADATA FILES
 A metadata file contains a list of station parameters, some of which
-can be stored in SAC but not in Mini-SEED.  Each line in a metadata
+can be stored in SAC but not in miniSEED.  Each line in a metadata
 file should be a comma-separated list of parameters in the following
 order:
 
