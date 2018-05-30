@@ -1,3 +1,6 @@
+2018.150: 0.10
+	- Fix setting of default units flag and actually make it the default.
+
 2018.122: 0.9.11
 	- Update libmseed to 2.19.5.
 	- Add -Im and -Is options to force input to be considered either miniSEED

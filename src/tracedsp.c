@@ -20,6 +20,7 @@
 #include <time.h>
 
 #include <libmseed.h>
+#include <evresp.h>
 
 #include "convolve.h"
 #include "decimate.h"
@@ -29,7 +30,7 @@
 #include "sacformat.h"
 #include "taper.h"
 
-#define VERSION "0.9.11"
+#define VERSION "0.10"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -4038,10 +4039,12 @@ parameterProc (int argcount, char **argvec)
       exit (1);
     }
   }
-  else
+
+  /* Default is no unit conversion */
+  if (!respunits || !strcmp (respunits, "DEF"))
   {
-    /* Default is no unit conversion */
     respunits = "DEF";
+    def_units_flag = 1;
   }
 
   /* Report the program version */
