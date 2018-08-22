@@ -7,7 +7,7 @@
  * Written by Chad Trabant, IRIS Data Management Center.
  ***************************************************************************/
 
-// Add resampling process
+// Add resampling process, interpolation using lanczos method
 
 // Add option to fill gaps under specified length with zeros
 
@@ -20,7 +20,6 @@
 #include <time.h>
 
 #include <libmseed.h>
-#include <evresp.h>
 
 #include "convolve.h"
 #include "decimate.h"
@@ -30,7 +29,7 @@
 #include "sacformat.h"
 #include "taper.h"
 
-#define VERSION "0.10"
+#define VERSION "0.10DEV"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -626,6 +625,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
   int nfreqs;
   double delfreq;
 
+  double *freqs = NULL;
   double *creal = NULL;
   double *cimag = NULL;
   double *dreal = NULL;
@@ -669,7 +669,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
                               plp->respstart, plp->respstop,
                               respunits, MS_HPTIME2EPOCH (seg->starttime), respusedelay,
                               plp->filename[idx], resptotalsens,
-                              &xreal, &ximag, verbose);
+                              &freqs, &xreal, &ximag, verbose);
       }
       else
       {
@@ -677,12 +677,12 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
                               plp->respstart, plp->respstop,
                               respunits, MS_HPTIME2EPOCH (seg->starttime), respusedelay,
                               plp->filename[idx], resptotalsens,
-                              &xreal, &ximag, verbose);
+                              &freqs, &xreal, &ximag, verbose);
       }
 
       if (retval)
       {
-        fprintf (stderr, "Error determing frequency response\n");
+        fprintf (stderr, "Error determining frequency response\n");
         return -1;
       }
 
@@ -711,7 +711,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
         addToProcLog ("Deconvolving SAC Poles & Zeros response '%s'", plp->filename[idx]);
 
       retval = calcfr_sac (nfreqs, delfreq, plp->filename[idx],
-                           &xreal, &ximag, verbose);
+                           &freqs, &xreal, &ximag, verbose);
 
       /* Assign to convolution or deconvolution array */
       if (plp->filetype[idx] == PROC_CONVSAC)
@@ -745,7 +745,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
       /* Determine frequency limits for deconvolution response */
       if (findtaper (freqlimit, dreal, dimag, nfreqs, delfreq, lcdBdown, ucdBdown))
       {
-        fprintf (stderr, "Error determing deconvolution frequency limit parameters\n");
+        fprintf (stderr, "Error determining deconvolution frequency limit parameters\n");
         return -1;
       }
     }
@@ -762,9 +762,11 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
 
   /* Perform convolution, deconvolution or both */
   retval = convolve (seg->datasamples, seg->numsamples, 1.0 / seg->samprate, nfreqs, nfft,
-                     creal, cimag, dreal, dimag, freqlimit, &prewhiten, verbose);
+                     freqs, creal, cimag, dreal, dimag, freqlimit, &prewhiten, verbose);
 
   /* Free response function arrays */
+  if (freqs)
+    free (freqs);
   if (creal)
     free (creal);
   if (cimag)
@@ -4041,10 +4043,9 @@ parameterProc (int argcount, char **argvec)
   }
 
   /* Default is no unit conversion */
-  if (!respunits || !strcmp (respunits, "DEF"))
+  if (!respunits)
   {
     respunits = "DEF";
-    def_units_flag = 1;
   }
 
   /* Report the program version */

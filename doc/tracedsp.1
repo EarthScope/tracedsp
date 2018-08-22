@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2018/05/02
+.TH TRACEDSP 1 2018/08/21
 .SH NAME
 Trace DSP, a time series processor for SAC and miniSEED data
 
@@ -133,13 +133,13 @@ the specified file.
 
 .IP "-CR \fIrespfile[:start:stop]\fP"
 Convolve the time series with the response specified in the SEED RESP
-file.  Optionally the starting and ending stages can be limited by
-specifying them as \fIstart\fP and \fIstop\fP.
+or StationXML file.  Optionally the starting and ending stages can be
+limited by specifying them as \fIstart\fP and \fIstop\fP.
 
 .IP "-DR \fIrespfile[:start:stop]\fP"
-Deconvolve the response specified in the SEED RESP file from the
-time series.  Optionally the starting and ending stages can be limited
-by specifying them as \fIstart\fP and \fIstop\fP.
+Deconvolve the response specified in the SEED RESP or StationXML file
+from the time series.  Optionally the starting and ending stages can
+be limited by specifying them as \fIstart\fP and \fIstop\fP.
 
 .IP "-CS \fIpzfile\fP"
 Convolve the time series with the response specified in the SAC poles
@@ -181,29 +181,30 @@ order is 6.
 
 .IP "-Rts"
 Use the total channel sensitivity when (de)convolving with responses
-specified in SEED RESP format.  By default evalresp calculates the
-total gain as the product of stage gains.  This option allows using a
-subset of the stages combined with the full scale sensitivity,
+specified in SEED RESP or StationXML.  By default evalresp calculates
+the total gain as the product of stage gains.  This option allows
+using a subset of the stages combined with the full scale sensitivity,
 primarily useful to calculate a response using just the poles and
 zeros stage with the full sensitivity (as would be done with a SAC
 poles and zeros file).  This is equivalent to the -ts evalresp option.
 
 .IP "-Red"
-Use the estimated delay in SEED RESP files instead of the correction
-applied value when (de)convolving asymmetric FIR filters.  This is
-equivalent to the -use-estimated-delay evalresp option.
-	
+Use the estimated delay in SEED RESP or StationXML files instead of
+the correction applied value when (de)convolving asymmetric FIR
+filters.  This is equivalent to the -use-estimated-delay evalresp
+option.
+
 .IP "-Rin"
 Ignore the SEED naming parameters when (de)convolving with responses
-specified in SEED RESP format, i.e. use the first response found in
-the specified RESP file.  By default the network, station, location
-and channel of the time series are matched with an appropriate
-response in the specified RESP file.
+specified in SEED RESP or StationXML format, i.e. use the first
+response found in the specified file.  By default the network,
+station, location and channel of the time series are matched with an
+appropriate response in the specified file.
 
 .IP "-Ru \fIunits\fP"
-Specify the output units for the response calculated with evalresp for
-SEED RESP (de)convolution operations.  By default the output units of
-the response will be the input units specified in the RESP.
+Specify the output units for the response calculated with evalresp
+(de)convolution operations.  By default the output units of the
+response will be the input units specified in the response file.
 
 .IP "-LP \fIfrequency[/order]\fP"
 Low-pass filter the time series using an IIR filter derived from a low

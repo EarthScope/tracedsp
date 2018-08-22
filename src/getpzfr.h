@@ -6,8 +6,8 @@
 extern "C" {
 #endif
 
-int getpzfr (int nfreq, double delfrq, double xreal[], double ximag[],
-	     char *pzfilename);
+int getpzfr (int nfreq, double delfrq, double freqs[],
+             double xreal[], double ximag[], char *pzfilename);
 
 #ifdef __cplusplus
 }

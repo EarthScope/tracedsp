@@ -4,7 +4,7 @@
  * Time-series convolution routines, the primary entry points are the
  * convolve_sac() and convolve_resp() routines which (de)convolve a
  * time-series with the frequency response described either in a SAC
- * formatted poles and zeros file or a SEED RESP file.
+ * formatted poles and zeros file or a SEED RESP or StationXML file.
  *
  * The (de)convolution scheme used herein is more or less standard
  * with the following parameters:
@@ -12,8 +12,6 @@
  * number of points in the FFT (nfft): next power of 2 of # samples
  * number of frequencies (nfreqs):  nfft/2 + 1
  * frequencies from 0 (DC) to Nyquist at intervals of samprate/nfft.
- *
- * Modified: 2014.073
  *********************************************************************/
 
 #include <float.h>
@@ -21,8 +19,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
-#include <evresp.h>
+#include <evalresp/public_api.h>
 
 #include "convolve.h"
 #include "getpzfr.h"
@@ -44,6 +43,7 @@
  *   delta      : sampling period in seconds
  *   nfreqs     : number of unique points in FFT (FFT mag. is symmetric)
  *   nfft       : number of all points used in FFT (must be 2^x)
+ *   freqs      : frequencies matching real & imaginary arrays (nfreqs)
  *   creal      : real components of FR to convolve (nfreqs)
  *   cimag      : imaginary components of FR to convolve (nfreqs)
  *   dreal      : real components of FR to deconvolve (nfreqs)
@@ -58,14 +58,14 @@
  *********************************************************************/
 int
 convolve (double data[], int npts, double delta, int nfreqs, int nfft,
-          double *creal, double *cimag, double *dreal, double *dimag,
+          double *freqs, double *creal, double *cimag, double *dreal, double *dimag,
           double taperfreq[], int *prewhiten,
           int verbose)
 {
   int i, j;
   int wlwarning = 0;
   double whitecoef[21];
-  double delfreq, denr, fac, freq;
+  double delfreq, denr, fac;
 
   double *sreal, *simag;
 
@@ -174,11 +174,9 @@ convolve (double data[], int npts, double delta, int nfreqs, int nfft,
     fprintf (stderr, "Composite convolution operator (FAP):\n");
     for (i = 0; i < nfreqs; i++)
     {
-      freq = i * delfreq;
-
       if (taperfreq)
-        fac = (spectraltaper (freq, taperfreq[1], taperfreq[0]) *
-               spectraltaper (freq, taperfreq[2], taperfreq[3]));
+        fac = (spectraltaper (freqs[i], taperfreq[1], taperfreq[0]) *
+               spectraltaper (freqs[i], taperfreq[2], taperfreq[3]));
       else
         fac = 1.0;
 
@@ -188,18 +186,16 @@ convolve (double data[], int npts, double delta, int nfreqs, int nfft,
       amp   = sqrt (real * real + imag * imag);
       phase = atan2 (imag, real + 1.0e-200) * 180 / PI;
 
-      fprintf (stderr, "%.6E  %.6E  %.6E\n", freq, amp, phase);
+      fprintf (stderr, "%.6E  %.6E  %.6E\n", freqs[i], amp, phase);
     }
   }
 
   /* Scale and optionally taper the frequency response function */
   for (i = 0; i < nfreqs; i++)
   {
-    freq = i * delfreq;
-
     if (taperfreq)
-      fac = delfreq * (spectraltaper (freq, taperfreq[1], taperfreq[0]) *
-                       spectraltaper (freq, taperfreq[2], taperfreq[3]));
+      fac = delfreq * (spectraltaper (freqs[i], taperfreq[1], taperfreq[0]) *
+                       spectraltaper (freqs[i], taperfreq[2], taperfreq[3]));
     else
       fac = delfreq;
 
@@ -281,6 +277,7 @@ convolve (double data[], int npts, double delta, int nfreqs, int nfft,
  *   nfreqs     : number of frequencies
  *   delfreq    : frequency step
  *   sacpzfilename : name of file containing poles and zeros in SAC format
+ *   freqs      : pointer to array for FR frequencies, (re)allocated
  *   xreal      : pointer to array for FR real values, (re)allocated
  *   ximag      : pointer to array for FR imaginary values, (re)allocated
  *   verbose    : controls level of diagnostic output
@@ -292,13 +289,18 @@ convolve (double data[], int npts, double delta, int nfreqs, int nfft,
  *********************************************************************/
 int
 calcfr_sac (int nfreqs, double delfreq, char *sacpzfilename,
-            double **xreal, double **ximag, int verbose)
+            double **freqs, double **xreal, double **ximag, int verbose)
 {
   /* Sanity checks */
   if (!sacpzfilename || !xreal || !ximag)
     return -1;
 
-  /* Allocate complex number arrays */
+  /* Allocate frequency and complex number arrays */
+  if ((*freqs = (double *)realloc (*freqs, nfreqs * sizeof (double))) == NULL)
+  {
+    fprintf (stderr, "calcfr_resp(): Error allocating memory\n");
+    return -1;
+  }
   if ((*xreal = (double *)realloc (*xreal, 2 * nfreqs * sizeof (double))) == NULL)
   {
     fprintf (stderr, "calcfr_sac(): Error allocating memory\n");
@@ -314,7 +316,7 @@ calcfr_sac (int nfreqs, double delfreq, char *sacpzfilename,
   if (verbose > 1)
     fprintf (stderr, "Determinig frequency response from SAC Poles & Zeros\n");
 
-  if (getpzfr (nfreqs, delfreq, *xreal, *ximag, sacpzfilename))
+  if (getpzfr (nfreqs, delfreq, *freqs, *xreal, *ximag, sacpzfilename))
   {
     fprintf (stderr, "calcfr_sac(): Error determining frequency response for: %s\n",
              sacpzfilename);
@@ -327,8 +329,8 @@ calcfr_sac (int nfreqs, double delfreq, char *sacpzfilename,
 /*********************************************************************
  * calcfr_resp:
  *
- * Calculate the frequency response described by a SEED RESP file.
- * The complex response is evaluated using evalresp.
+ * Calculate the frequency response described by a SEED RESP or
+ * StationXML file.  The complex response is evaluated using evalresp.
  *
  * Arguments:
  *   nfreqs     : number of frequencies
@@ -341,9 +343,10 @@ calcfr_sac (int nfreqs, double delfreq, char *sacpzfilename,
  *   stopstage  : stoping stage, can be -1 for last
  *   units      : response units, can be: DIS, VEL, ACC or DEF
  *   resptime   : time of response to match as epoch time
- *   usedelay   : flag to control usage of estimated delay in RESP
- *   respfilename : name of RESP file
+ *   usedelay   : flag to control usage of estimated delay
+ *   respfilename : name of RESP or StationXML file
  *   totalsensflag : use total sensitivity intead of gain product
+ *   freqs      : pointer to array for FR frequencies, (re)allocated
  *   xreal      : pointer to array for FR real values, (re)allocated
  *   ximag      : pointer to array for FR imaginary values, (re)allocated
  *   verbose    : controls level of diagnostic output
@@ -358,19 +361,83 @@ calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
              char *loc, char *chan, int startstage, int stopstage,
              char *units, time_t resptime, int usedelay,
              char *respfilename, int totalsensflag,
-             double **xreal, double **ximag, int verbose)
+             double **freqs, double **xreal, double **ximag, int verbose)
 {
+  evalresp_options *options = NULL;
+  evalresp_filter *filter = NULL;
+  evalresp_channels *channels = NULL;
+  evalresp_response *response = NULL;
+
   int i;
   struct tm *rtime;
-  char datetime[20];
-  struct response *resp = NULL;
-  double *freqs         = NULL;
 
   /* Sanity checks */
   if (!respfilename || !xreal || !ximag)
     return -1;
 
-  /* Allocate complex number arrays */
+  if (evalresp_new_options (NULL, &options) != EVALRESP_OK)
+  {
+    fprintf (stderr, "Failed to create evalresp options");
+    return -1;
+  }
+  else if (evalresp_new_filter (NULL, &filter) != EVALRESP_OK)
+  {
+    fprintf (stderr, "Failed to create evalresp filter");
+    return -1;
+  }
+
+  /* Set evalresp options */
+  options->min_freq              = 0;
+  options->max_freq              = (nfreqs - 1) * delfreq;
+  options->nfreq                 = nfreqs;
+  options->lin_freq              = 1;
+  options->filename              = strdup (respfilename);
+  options->format                = evalresp_complex_output_format;
+  options->b55_interpolate       = 1;
+  options->use_estimated_delay   = usedelay;
+  options->use_total_sensitivity = totalsensflag;
+  options->verbose               = (verbose > 1) ? verbose - 1 : verbose;
+  options->station_xml           = -1;
+
+  if (startstage >= 0)
+    options->start_stage = startstage;
+  if (stopstage >= 0)
+    options->stop_stage = stopstage;
+
+  if (!strncmp (units, "DEF", 3))
+    options->unit = evalresp_file_unit;
+  else if (!strncmp (units, "DIS", 3))
+    options->unit = evalresp_displacement_unit;
+  else if (!strncmp (units, "VEL", 3))
+    options->unit = evalresp_velocity_unit;
+  else if (!strncmp (units, "ACC", 3))
+    options->unit = evalresp_acceleration_unit;
+  else
+  {
+    fprintf (stderr, "Unrecognized unit request: '%s'\n", (units) ? units : "");
+    return -1;
+  }
+
+  /* Set evalresp filter */
+  rtime = gmtime (&resptime);
+  filter->datetime->year = rtime->tm_year + 1900;
+  filter->datetime->jday = rtime->tm_yday + 1;
+  filter->datetime->hour = rtime->tm_hour;
+  filter->datetime->min  = rtime->tm_min;
+  filter->datetime->sec  = rtime->tm_sec;
+
+  if (evalresp_add_sncl_text(NULL, filter, net, sta, loc, chan) != EVALRESP_OK)
+  {
+    fprintf (stderr, "Failed to add NSLC to evalresp filter");
+    return -1;
+  }
+
+  /* Allocate frequency and complex number arrays */
+  if ((*freqs = (double *)realloc (*freqs, nfreqs * sizeof (double))) == NULL)
+  {
+    fprintf (stderr, "calcfr_resp(): Error allocating memory\n");
+    return -1;
+  }
   if ((*xreal = (double *)realloc (*xreal, 2 * nfreqs * sizeof (double))) == NULL)
   {
     fprintf (stderr, "calcfr_resp(): Error allocating memory\n");
@@ -382,88 +449,65 @@ calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
     return -1;
   }
 
-  /* Construct an appropriate time string: YYYY,JJJ,HH:MM:SS */
-  rtime = gmtime (&resptime);
-  snprintf (datetime, sizeof (datetime), "%04d,%03d,%02d:%02d:%02d",
-            rtime->tm_year + 1900, rtime->tm_yday + 1,
-            rtime->tm_hour, rtime->tm_min, rtime->tm_sec);
-
-  /* Allocate frequencies array */
-  if ((freqs = (double *)malloc (nfreqs * sizeof (double))) == NULL)
+  if (evalresp_filename_to_channels(NULL, options->filename, options, filter, &channels) != EVALRESP_OK)
   {
-    fprintf (stderr, "calcfr_resp(): Cannot allocate memory\n");
+    fprintf (stderr, "calcfr_resp(): Error calling evalresp_filename_to_channels\n");
+    evalresp_free_options (&options);
+    evalresp_free_filter (&filter);
     return -1;
   }
 
-  /* Calculate frequencies */
-  for (i = 0; i < nfreqs; i++)
+  if (channels->nchannels != 1)
   {
-    freqs[i] = i * delfreq;
+    fprintf (stderr, "Cannot find appropriate response from '%s', num channels: %d\n",
+             options->filename, channels->nchannels);
+    evalresp_free_channels (&channels);
+    evalresp_free_options (&options);
+    evalresp_free_filter (&filter);
+    return -1;
   }
-
-  /* Control usage of any delay specified in the SEED response information */
-  if (usedelay)
-    use_delay (TRUE);
-  else
-    use_delay (FALSE);
 
   if (verbose > 1)
-    fprintf (stderr, "Determinig frequency response from SEED RESP\n");
+    fprintf (stderr, "Determining frequency response from SEED RESP/StationXML\n");
 
-  /* evresp (evalresp) arguments in order:
-   * char *stalst = List of stations (space or comma separated), glob matching
-   * char *chalst = List of channels (space or comma separated), glob matching
-   * char *net_code = Network code, glob matching
-   * char *locidlst = List of locations (comma separated), glob matching
-   * char *date_time = Date and Time in YYYY,DDD,HH:MM:SS format
-   * char *units = Output units: DEF, DIS, VEL, ACC (DEF=no conversion)
-   * char *file = Input RESP file name
-   * double *freqs = Array of desired frequencies for evaluation
-   * int nfreqs = Number of frequencies in freqs array
-   * char *rtype = Response type ("cs" = complex spectrum), unused I think.
-   * char *verbose = Verbosity string (e.g. NULL or "-v")
-   * int start_stage = Starting stage for evaluation, -1 for beginning
-   * int stop_stage = Ending stage for evaluation, -1 for end
-   * int stdio_flag = Set to true if input is from stdin
-   * int listinterp_out_flag = Interpolate List blockette output, 0=no
-   * int listinterp_in_flag = Interpolate List blockette input, 0=no
-   * double ilstinterp_tension = Interpolation tension
-   * int useTotalSensitivityFlag = Use of total sensitivity instead of gain product
-   */
-
-  /* Read RESP information and calculate frequency response using evalresp */
-  resp = evresp_itp (sta, chan, net, loc, datetime, units, respfilename, freqs, nfreqs,
-                     "cs", (verbose > 1) ? "-v" : NULL, startstage, stopstage, 0, 0, 0, 0, totalsensflag);
-
-  if (!resp)
+  if (evalresp_channel_to_response(NULL, channels->channels[0], options, &response) != EVALRESP_OK)
   {
-    fprintf (stderr, "calcfr_resp(): Error with evresp()\n");
+    fprintf (stderr, "Cannot calculate response for %s_%s_%s_%s\n",
+             channels->channels[0]->network, channels->channels[0]->staname,
+             channels->channels[0]->locid, channels->channels[0]->chaname);
+    evalresp_free_channels (&channels);
+    evalresp_free_options (&options);
+    evalresp_free_filter (&filter);
     return -1;
   }
-  else if (resp->nfreqs != nfreqs)
+
+  if (response->nfreqs != nfreqs)
   {
-    fprintf (stderr, "calcfr_resp(): Number of frequencies requested (%d) not equal to returned (%d), FAP response?\n",
-             nfreqs, resp->nfreqs);
+    fprintf (stderr, "calcfr_resp(): Number of frequencies requested (%d) not equal to returned (%d)\n",
+             nfreqs, response->nfreqs);
     return -1;
   }
-  else if (verbose)
+
+  if (verbose)
   {
-    fprintf (stderr, "Found response for %s.%s.%s.%s at %s (stages %d to %d)\n",
-             resp->network, resp->station, resp->locid, resp->channel,
-             datetime, startstage, stopstage);
+    fprintf (stderr, "Calculated response for %s_%s_%s_%s at %d,%d,%d:%d:%d (stages %d to %d)\n",
+             response->network, response->station, response->locid, response->channel,
+             rtime->tm_year + 1900, rtime->tm_yday + 1, rtime->tm_hour, rtime->tm_min,
+             rtime->tm_sec, startstage, stopstage);
   }
 
   /* Split evalresp's complex response into real & imaginary arrays */
-  for (i = 0; i < nfreqs; i++)
+  for (i = 0; i < response->nfreqs; i++)
   {
-    (*xreal)[i] = resp->rvec[i].real;
-    (*ximag)[i] = resp->rvec[i].imag;
+    (*freqs)[i] = response->freqs[i];
+    (*xreal)[i] = response->rvec[i].real;
+    (*ximag)[i] = response->rvec[i].imag;
   }
 
-  if (resp)
-    free_response (resp);
-  if (freqs)
-    free (freqs);
+  evalresp_free_response (&response);
+  evalresp_free_channels (&channels);
+  evalresp_free_options (&options);
+  evalresp_free_filter (&filter);
 
   return 0;
 } /* End of calcfr_resp() */
@@ -500,6 +544,7 @@ convolve_sac (double data[], int npts, double delta, double taperfreq[],
   int nfreqs;
   double delfreq;
 
+  double *freqs = NULL;
   double *xreal = NULL;
   double *ximag = NULL;
 
@@ -509,19 +554,21 @@ convolve_sac (double data[], int npts, double delta, double taperfreq[],
   delfreq = 1.0 / (delta * nfft);
 
   /* Calculate frequency response from SAC P&Zs */
-  if (calcfr_sac (nfreqs, delfreq, sacpzfilename, &xreal, &ximag, verbose))
+  if (calcfr_sac (nfreqs, delfreq, sacpzfilename, &freqs, &xreal, &ximag, verbose))
   {
     return -1;
   }
 
   /* Call main convolution routine */
   if (deconvflag)
-    retval = convolve (data, npts, delta, nfreqs, nfft, NULL, NULL,
+    retval = convolve (data, npts, delta, nfreqs, nfft, freqs, NULL, NULL,
                        xreal, ximag, taperfreq, prewhiten, verbose);
   else
-    retval = convolve (data, npts, delta, nfreqs, nfft, xreal, ximag,
+    retval = convolve (data, npts, delta, nfreqs, nfft, freqs, xreal, ximag,
                        NULL, NULL, taperfreq, prewhiten, verbose);
 
+  if (freqs)
+    free (freqs);
   if (xreal)
     free (xreal);
   if (ximag)
@@ -534,7 +581,8 @@ convolve_sac (double data[], int npts, double delta, double taperfreq[],
  * convolve_resp:
  *
  * Convole a time-series with the frequency response described by a
- * SEED RESP file.  The complex response is evaluated using evalresp.
+ * SEED RESP or StationXML file.  The complex response is evaluated
+ * using evalresp.
  *
  * Arguments:
  *   data       : array of input data samples
@@ -548,14 +596,14 @@ convolve_sac (double data[], int npts, double delta, double taperfreq[],
  *   stopstage  : stoping stage, can be -1 for last
  *   units      : response units, can be: DIS, VEL, ACC or DEF
  *   resptime   : time of response to match as epoch time
- *   usedelay   : flag to control usage of estimated delay in RESP
+ *   usedelay   : flag to control usage of estimated delay
  *   taperfreq  : spectrum taper filter definition
  *                  f0,f1 = frequency range for high-pass taper
  *                  f2,f3 = frequency range for low-pass taper
  *   prewhiten  : order of predictive filter to prewhiten the data,
  *                a value of 0 (not the pointer itself) indicates none
  *   deconvflag : 0=Convolution and 1=Deconvolution
- *   respfilename : name of RESP file
+ *   respfilename : name of RESP or StationXML file
  *   totalsensflag : use total sensitivity intead of gain product
  *   verbose    : controls level of diagnostic output
  *
@@ -575,6 +623,7 @@ convolve_resp (double data[], int npts, double delta,
   int nfreqs;
   double delfreq;
 
+  double *freqs = NULL;
   double *xreal = NULL;
   double *ximag = NULL;
 
@@ -583,22 +632,24 @@ convolve_resp (double data[], int npts, double delta,
 
   delfreq = 1.0 / (delta * nfft);
 
-  /* Calculate frequency response from SEED RESP */
+  /* Calculate frequency response from SEED RESP/StationXML */
   if (calcfr_resp (nfreqs, delfreq, net, sta, loc, chan, startstage,
                    stopstage, units, resptime, usedelay, respfilename,
-                   totalsensflag, &xreal, &ximag, verbose))
+                   totalsensflag, &freqs, &xreal, &ximag, verbose))
   {
     return -1;
   }
 
   /* Call main convolution routine */
   if (deconvflag)
-    retval = convolve (data, npts, delta, nfreqs, nfft, NULL, NULL,
+    retval = convolve (data, npts, delta, nfreqs, nfft, freqs, NULL, NULL,
                        xreal, ximag, taperfreq, prewhiten, verbose);
   else
-    retval = convolve (data, npts, delta, nfreqs, nfft, xreal, ximag,
+    retval = convolve (data, npts, delta, nfreqs, nfft, freqs, xreal, ximag,
                        NULL, NULL, taperfreq, prewhiten, verbose);
 
+  if (freqs)
+    free (freqs);
   if (xreal)
     free (xreal);
   if (ximag)

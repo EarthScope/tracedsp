@@ -1,3 +1,6 @@
+2018.223:
+	- Adapt (de)convolution code to evalresp 5.
+
 2018.150: 0.10
 	- Fix setting of default units flag and actually make it the default.
 

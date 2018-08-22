@@ -6,8 +6,6 @@
  *
  * The calcfr() routine is a cleaned up version of the equivalent in
  * SAC 2000.
- *
- * modified: 2012.098
  *********************************************************************/
 
 #include <ctype.h>
@@ -25,7 +23,7 @@
 void calcfr (int nfreq, double delfreq, double constant,
              int nzero, complexd zeros[],
              int npole, complexd poles[],
-             double xreal[], double ximag[]);
+             double freqs[], double xreal[], double ximag[]);
 
 /*********************************************************************
  * getpzfr():
@@ -44,8 +42,8 @@ void calcfr (int nfreq, double delfreq, double constant,
  * Return 0 on success and -1 on error.
  *********************************************************************/
 int
-getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
-         char *pzfilename)
+getpzfr (int nfreq, double delfreq, double freqs[],
+         double xreal[], double ximag[], char *pzfilename)
 {
   int idx;
   FILE *fp;
@@ -230,7 +228,7 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
 
   fprintf (stderr, "Calculating frequency response for poles and zeros\n");
 
-  calcfr (nfreq, delfreq, constant, nzeros, zeros, npoles, poles, xreal, ximag);
+  calcfr (nfreq, delfreq, constant, nzeros, zeros, npoles, poles, freqs, xreal, ximag);
 
   return 0;
 } /* end of function getpzfr() */
@@ -247,6 +245,7 @@ getpzfr (int nfreq, double delfreq, double xreal[], double ximag[],
  * zeros   : array of zeros
  * npole   : number of poles
  * poles   : array of poles
+ * freqs   : array of frequencies for real/imaginary arrays
  * xreal   : array of real part of frequency response
  * ximag   : array of imaginary part of frequncy response
  *           xreal and ximag must already be allocated with enough
@@ -257,7 +256,7 @@ void
 calcfr (int nfreq, double delfreq, double constant,
         int nzero, complexd zeros[],
         int npole, complexd poles[],
-        double xreal[], double ximag[])
+        double freqs[], double xreal[], double ximag[])
 {
   double delomg, fac, omega;
   double ti, ti0, tid, tin;
@@ -269,6 +268,7 @@ calcfr (int nfreq, double delfreq, double constant,
 
   for (jdx = 0; jdx < nfreq; jdx++)
   {
+    freqs[jdx] = delfreq * jdx;
     omega = delomg * jdx;
     trn   = 1.0;
     tin   = 0.0;
