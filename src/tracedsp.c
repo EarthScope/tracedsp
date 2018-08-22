@@ -338,6 +338,7 @@ main (int argc, char **argv)
           {
             fprintf (stderr, "Error calculating statistics\n");
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -347,6 +348,7 @@ main (int argc, char **argv)
           {
             fprintf (stderr, "Error applying filter for %s\n", id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -358,6 +360,7 @@ main (int argc, char **argv)
                      (plp->filename[0]) ? plp->filename[0] : "None",
                      (plp->filename[1]) ? plp->filename[1] : "None", id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -368,6 +371,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error differentiating time series for %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -378,6 +382,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error integrating time series for %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -388,6 +393,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error removing mean from time series %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -398,6 +404,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error scaling values of time series %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -408,6 +415,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error decimating time series %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -418,6 +426,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error tapering time series %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -428,6 +437,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error applying Maclaurin polynomial to time series %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -438,6 +448,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error calculating envelope of time series %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -448,6 +459,7 @@ main (int argc, char **argv)
             fprintf (stderr, "Error synchronizing time series windows %s\n",
                      id->srcname);
             errflag = -1;
+            ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
           }
         }
@@ -459,11 +471,10 @@ main (int argc, char **argv)
               fprintf (stderr, "Error rotating time series %s\n",
                        id->srcname);
               errflag = -1;
+              ((struct segdetails *)seg->prvtptr)->procerror = errflag;
               break;
             }
         }
-
-        ((struct segdetails *)seg->prvtptr)->procerror = errflag;
 
         seg = seg->next;
       }
