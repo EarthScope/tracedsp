@@ -1,3 +1,6 @@
+2020.128: 0.11
+	- Add final evalresp 5.0.0 sources.
+
 2018.223:
 	- Adapt (de)convolution code to evalresp 5.
 	- Avoid writing traces for which processing steps have failed.
