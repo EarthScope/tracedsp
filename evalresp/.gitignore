@@ -17,7 +17,6 @@
 *.so.*
 
 configure
-config.*
 libtool
 stamp*
 build-aux
