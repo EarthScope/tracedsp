@@ -1,4 +1,5 @@
 
+Makefile
 .deps
 .libs
 *.in
@@ -17,6 +18,7 @@
 *.so.*
 
 configure
+config.*
 libtool
 stamp*
 build-aux
