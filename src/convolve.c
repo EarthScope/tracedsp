@@ -397,7 +397,7 @@ calcfr_resp (int nfreqs, double delfreq, char *net, char *sta,
   options->use_estimated_delay   = usedelay;
   options->use_total_sensitivity = totalsensflag;
   options->verbose               = (verbose > 1) ? verbose - 1 : verbose;
-  options->station_xml           = -1;
+  options->station_xml           = 0;
 
   if (startstage >= 0)
     options->start_stage = startstage;

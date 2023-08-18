@@ -29,7 +29,7 @@
 #include "sacformat.h"
 #include "taper.h"
 
-#define VERSION "0.11"
+#define VERSION "0.11DEV"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
