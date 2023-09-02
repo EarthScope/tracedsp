@@ -881,7 +881,7 @@ findtaper (double *taperfreq, double *xreal, double *ximag,
  * fft:
  * Discrete FFT for perfect powers of two.
  *
- * The sine tables are calcualted when the fuction is first used and
+ * The sine tables are calculated when the function is first used and
  * extended when needed for subsequent calls where nfft has
  * increased.
  *

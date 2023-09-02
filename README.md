@@ -17,6 +17,16 @@ In most environments a simple 'make' will build the program.
 The CC and CFLAGS environment variables can be used to configure
 the build parameters.
 
+## Caveats
+
+This program has lots of signal processing, selection, etc. capability
+but not a lot of guardrails for illogical combinations of options.
+The caller is encouraged to test specific combinations before applying
+to research data.
+
+As to development, the functionality has outgrown the original
+code design.  It works, but it's not beautiful code.
+
 ## License
 
 Licensed under the Apache License, Version 2.0 (the "License");

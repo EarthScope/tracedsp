@@ -1,4 +1,4 @@
-.TH TRACEDSP 1 2018/08/21
+.TH TRACEDSP 1 2023/09/02 "EarthScope Data Services" "EarthScope Data Services"
 .SH NAME
 Trace DSP, a time series processor for SAC and miniSEED data
 
@@ -36,17 +36,6 @@ Be more verbose.  This flag can be used multiple times ("-v -v" or
 Print a basic summary including the number of records and the number
 of samples they included after processing all input records.
 
-.IP "-tt \fIsecs\fP"
-Specify a time tolerance for constructing continous trace
-segments. The tolerance is specified in seconds.  The default
-tolerance is 1/2 of the sample period.
-
-.IP "-rt \fIdiff\fP"
-Specify a sample rate tolerance for constructing continous trace
-segments. The tolerance is specified as the difference between two
-sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) <
-0.0001).
-
 .IP "-ts \fItime\fP"
 Limit processing to miniSEED records that start after \fItime\fP.
 The format of the \fItime\fP arguement
@@ -67,19 +56,9 @@ for all files specified on the command line after the option.
 .IP "-MSEED"
 Write output as miniSEED instead of SAC.
 
-.IP "-Mr \fIbytes\fP"
-Specify the input record length in \fIbytes\fP.  By default the
-length of the first miniSEED record is automatically detected, this
-option forces the record length.  The option is required when the
-input records do not contain a 1000 Blockette.
-
-.IP "-Me \fIencoding\fP"
-Specify the data encoding format.  These encoding values are the same
-as those specified in the SEED 1000 Blockette.
-
 .IP "-MR \fIbytes\fP"
 Specify the record length in \fIbytes\fP for output miniSEED data.
-The default record length will be 4096 bytes.
+The default maximum record length will be 4096 bytes.
 
 .IP "-ME \fIencoding\fP"
 Specify the \fIencoding\fP format output miniSEED data.  This can be one of:
@@ -89,7 +68,11 @@ Specify the \fIencoding\fP format output miniSEED data.  This can be one of:
 5  : 64-bit floating point numbers
 10 : Steim-1 integer compression
 11 : Stime-2 integer compression
-.fi 
+.fi
+
+.IP "-MF \fIformat\fP"
+Specify the miniSEED format version.  Default is version 2 for maximum
+compatibilty as of this writing.
 
 .IP "-Sf \fIformat\fP"
 Specify the SAC output type, the default is SAC binary in host
@@ -415,7 +398,7 @@ TA.ELFS..LHZ.R.mseed
 .SH AUTHOR
 .nf
 Chad Trabant
-IRIS Data Management Center
+EarthScope Data Services
 
 In an effort to avoid reinventing the wheel and creating new bugs many
 of the core data processing routines were borrowed from other

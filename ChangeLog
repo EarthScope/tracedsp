@@ -1,3 +1,7 @@
+2023.244: 0.12
+	- Update to libmeed v3.0.17, with support for miniSEED v3.
+	- Remove time and sample rate tolerance options.
+
 2023.230:
 	- Update evalresp to v5.0.1
 

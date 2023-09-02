@@ -40,14 +40,6 @@ tracedsp [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Print a basic summary including the number of records and the number of samples they included after processing all input records.</p>
 
-<b>-tt </b><i>secs</i>
-
-<p style="padding-left: 30px;">Specify a time tolerance for constructing continous trace segments. The tolerance is specified in seconds.  The default tolerance is 1/2 of the sample period.</p>
-
-<b>-rt </b><i>diff</i>
-
-<p style="padding-left: 30px;">Specify a sample rate tolerance for constructing continous trace segments. The tolerance is specified as the difference between two sampling rates.  The default tolerance is tested as: (abs(1-sr1/sr2) < 0.0001).</p>
-
 <b>-ts </b><i>time</i>
 
 <p style="padding-left: 30px;">Limit processing to miniSEED records that start after <i>time</i>. The format of the <i>time</i> arguement is: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' where valid delimiters are either commas (,), colons (:) or periods (.).</p>
@@ -64,17 +56,9 @@ tracedsp [options] file1 [file2 file3 ...]
 
 <p style="padding-left: 30px;">Write output as miniSEED instead of SAC.</p>
 
-<b>-Mr </b><i>bytes</i>
-
-<p style="padding-left: 30px;">Specify the input record length in <i>bytes</i>.  By default the length of the first miniSEED record is automatically detected, this option forces the record length.  The option is required when the input records do not contain a 1000 Blockette.</p>
-
-<b>-Me </b><i>encoding</i>
-
-<p style="padding-left: 30px;">Specify the data encoding format.  These encoding values are the same as those specified in the SEED 1000 Blockette.</p>
-
 <b>-MR </b><i>bytes</i>
 
-<p style="padding-left: 30px;">Specify the record length in <i>bytes</i> for output miniSEED data. The default record length will be 4096 bytes.</p>
+<p style="padding-left: 30px;">Specify the record length in <i>bytes</i> for output miniSEED data. The default maximum record length will be 4096 bytes.</p>
 
 <b>-ME </b><i>encoding</i>
 
@@ -86,6 +70,10 @@ tracedsp [options] file1 [file2 file3 ...]
 10 : Steim-1 integer compression
 11 : Stime-2 integer compression
 </pre>
+
+<b>-MF </b><i>format</i>
+
+<p style="padding-left: 30px;">Specify the miniSEED format version.  Default is version 2 for maximum compatibilty as of this writing.</p>
 
 <b>-Sf </b><i>format</i>
 
@@ -336,7 +324,7 @@ TA.ELFS..LHZ.R.mseed
 
 <pre >
 Chad Trabant
-IRIS Data Management Center
+EarthScope Data Services
 
 In an effort to avoid reinventing the wheel and creating new bugs many
 of the core data processing routines were borrowed from other
@@ -345,4 +333,4 @@ Handler and others.  Any new bugs introduced are mine.
 </pre>
 
 
-(man page 2018/08/21)
+(man page 2023/09/02)

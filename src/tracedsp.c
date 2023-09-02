@@ -1,15 +1,13 @@
 /***************************************************************************
  * tracedsp.c - time series processor for miniSEED and SAC data
  *
- * Opens user specified files, parses the input data, applys
- * processing steps to the timeseries and writes the data.  Kapeesh?
+ * Opens user specified files, parses the input data, applies
+ * specified processing steps to the timeseries and writes the data.
  *
- * Written by Chad Trabant, IRIS Data Management Center.
+ * A number of processing steps are available, see the manual for details.
+ *
+ * Written by Chad Trabant, EarthScope Data Services
  ***************************************************************************/
-
-// Add resampling process, interpolation using lanczos method
-
-// Add option to fill gaps under specified length with zeros
 
 #include <ctype.h>
 #include <errno.h>
@@ -18,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <libmseed.h>
 
@@ -29,7 +28,7 @@
 #include "sacformat.h"
 #include "taper.h"
 
-#define VERSION "0.11DEV"
+#define VERSION "0.12"
 #define PACKAGE "tracedsp"
 
 /* Linkable structure to hold input file names */
@@ -61,11 +60,11 @@ struct proclink
   int coefficientcount;
   char rotateENZ[3];   /* Component names for Z,N,E */
   char rotatedENZ[3];  /* Final component names */
-  double rotations[2]; /* 0: Azimuth, 1: Incicent angle */
+  double rotations[2]; /* 0: Azimuth, 1: Incident angle */
   struct proclink *next;
 };
 
-/* Additional segment details, stored at MSTraceSeg->prvtptr  */
+/* Additional segment details, stored at MS3TraceSeg->prvtptr  */
 struct segdetails
 {
   struct SACHeader *sacheader;
@@ -114,25 +113,25 @@ struct metalist
 struct metanode
 {
   char *metafields[MAXMETAFIELDS];
-  hptime_t starttime;
-  hptime_t endtime;
+  nstime_t starttime;
+  nstime_t endtime;
 };
 
-static int procFilter (MSTraceSeg *seg, struct proclink *plp);
-static int procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp);
-static int procDiff2 (MSTraceSeg *seg, struct proclink *plp);
-static int procIntTrap (MSTraceSeg *seg, struct proclink *plp);
-static int procRMean (MSTraceSeg *seg, struct proclink *plp);
-static int procScale (MSTraceSeg *seg, struct proclink *plp);
-static int procDecimate (MSTraceSeg *seg, struct proclink *plp);
-static int procTaper (MSTraceSeg *seg, struct proclink *plp);
-static int procPolynomialM (MSTraceSeg *seg, struct proclink *plp);
-static int procEnvelope (MSTraceSeg *seg, struct proclink *plp);
-static int procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend);
-static int procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp);
+static int procFilter (MS3TraceSeg *seg, struct proclink *plp);
+static int procConvolve (MS3TraceID *id, MS3TraceSeg *seg, struct proclink *plp);
+static int procDiff2 (MS3TraceSeg *seg, struct proclink *plp);
+static int procIntTrap (MS3TraceSeg *seg, struct proclink *plp);
+static int procRMean (MS3TraceSeg *seg, struct proclink *plp);
+static int procScale (MS3TraceSeg *seg, struct proclink *plp);
+static int procDecimate (MS3TraceSeg *seg, struct proclink *plp);
+static int procTaper (MS3TraceSeg *seg, struct proclink *plp);
+static int procPolynomialM (MS3TraceSeg *seg, struct proclink *plp);
+static int procEnvelope (MS3TraceSeg *seg, struct proclink *plp);
+static int procDataTrim (MS3TraceSeg *seg, nstime_t lateststart, nstime_t earliestend);
+static int procRotate (MS3TraceList *mstl, MS3TraceID *tid, MS3TraceSeg *tseg, struct proclink *plp);
 
-static int64_t readMSEED (char *mseedfile, MSTraceList *mstl);
-static int64_t readSAC (char *sacfile, MSTraceList *mstl);
+static int64_t readMSEED (char *mseedfile, MS3TraceList *mstl);
+static int64_t readSAC (char *sacfile, MS3TraceList *mstl);
 static int parseSAC (FILE *ifp, struct SACHeader *sh, float **data, int format,
                      int verbose, char *sacfile);
 static int readBinaryHeaderSAC (FILE *ifp, struct SACHeader *sh, int *format,
@@ -142,11 +141,11 @@ static int readBinaryDataSAC (FILE *ifp, float *data, int datacnt,
 static int readAlphaHeaderSAC (FILE *ifp, struct SACHeader *sh);
 static int readAlphaDataSAC (FILE *ifp, float *data, int datacnt);
 
-static int writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile);
-static int writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile);
+static int writeMSEED (MS3TraceID *id, MS3TraceSeg *seg, char *outputfile);
+static int writeSAC (MS3TraceID *id, MS3TraceSeg *seg, int format, char *outputfile);
 static int writeBinarySAC (struct SACHeader *sh, float *fdata, int npts, char *outfile);
 static int writeAlphaSAC (struct SACHeader *sh, float *fdata, int npts, char *outfile);
-static int insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime);
+static int insertSACMetaData (struct SACHeader *sh, nstime_t sacstarttime);
 static int swapSACHeader (struct SACHeader *sh);
 
 static int addToString (char **string, char *add, char *delim, int where, int maxlen);
@@ -160,7 +159,7 @@ static int integrateTrap (void *input, char inputtype, int length,
 static int applyPolynomialM (void *input, char inputtype, int length,
                              double *coeff, int numcoeff, void *output);
 
-static int convertSamples (MSTraceSeg *seg, char type);
+static int convertSamples (MS3TraceSeg *seg, char type);
 static int parameterProc (int argcount, char **argvec);
 static char *getOptVal (int argcount, char **argvec, int argopt, int dasharg);
 static int readMetaData (char *metafile);
@@ -178,14 +177,9 @@ static void usage (void);
 
 static flag verbose       = 0;
 static flag basicsum      = 0;    /* Controls printing of basic summary */
-static double timetol     = -1.0; /* Time tolerance for continuous traces */
-static double sampratetol = -1.0; /* Sample rate tolerance for continuous traces */
-static int reclen         = -1;   /* SEED record length for input data */
-static int packreclen     = -1;   /* SEED record length for output data */
-static int packencoding   = 4;    /* SEED encoding format for output data */
-static char *encodingstr  = 0;    /* SEED encoding format string */
-static int byteorder      = -1;   /* Byte order of output data, use libmseed default */
-static int srateblkt      = 0;    /* Add blockette 100 to miniSEED */
+static int packreclen     = -1;   /* miniSEED record length for output data */
+static int packencoding   = 4;    /* miniSEED encoding format for output data */
+static int msformat       = 2;    /* miniSEED format version */
 static flag dataformat    = 2;    /* 0 = No output, 1 = miniSEED, 2 = SAC */
 static flag informat      = 0;    /* 0 = auto detect, 1 = miniSEED, 2 = SAC */
 static flag sacinformat   = 0;    /* 0=auto, 1=alpha, 2=binary (host), 3=binary (LE), 4=binary (BE) */
@@ -203,8 +197,8 @@ static flag resptotalsens = 0;    /* Controls evalresp's usage of total sensitiv
 static flag respusedelay  = 0;    /* Controls evalresp's usage of estimated delay in RESP */
 static flag respusename   = 1;    /* Controls evalresp's matching of Net, Sta, Loc and Chan */
 static char *respunits    = 0;    /* Controls units for evalresp calculated responses */
-static hptime_t starttime = HPTERROR;
-static hptime_t endtime   = HPTERROR;
+static nstime_t starttime = NSTUNSET;
+static nstime_t endtime   = NSTUNSET;
 static char *outputfile   = 0; /* Output file name */
 static char *outputdir    = 0; /* Output base directory */
 static int outputbytes    = 0; /* Bytes written to output file */
@@ -226,15 +220,15 @@ main (int argc, char **argv)
 {
   struct filelink *flp, *nextflp;
   struct proclink *plp, *nextplp;
-  MSTraceList *mstl  = NULL;
-  MSTraceID *id      = NULL;
-  MSTraceSeg *seg    = NULL;
+  MS3TraceList *mstl = NULL;
+  MS3TraceID *id     = NULL;
+  MS3TraceSeg *seg   = NULL;
   int errflag        = 0;
   int64_t totalsamps = 0;
   int64_t sampsread;
   int totalfiles       = 0;
-  hptime_t lateststart = HPTERROR;
-  hptime_t earliestend = HPTERROR;
+  nstime_t lateststart = NSTUNSET;
+  nstime_t earliestend = NSTUNSET;
   char stime[50];
   char etime[50];
 
@@ -242,22 +236,8 @@ main (int argc, char **argv)
   if (parameterProc (argc, argv) < 0)
     return -1;
 
-  /* Setup encoding environment variable if specified, ugly kludge */
-  if (encodingstr)
-  {
-    int inputencoding = strtoul (encodingstr, NULL, 10);
-
-    if (inputencoding == 0 && errno == EINVAL)
-    {
-      ms_log (2, "Error parsing input encoding format: %s\n", encodingstr);
-      return -1;
-    }
-
-    MS_UNPACKENCODINGFORMAT (inputencoding);
-  }
-
-  /* Initialize MSTraceList */
-  mstl = mstl_init (NULL);
+  /* Initialize MS3TraceList */
+  mstl = mstl3_init (NULL);
 
   /* Loop over input file list */
   flp = filelist;
@@ -306,31 +286,31 @@ main (int argc, char **argv)
     printf ("Input Files: %d, Samples: %lld\n", totalfiles, (long long int)totalsamps);
 
   /* Determine latest start and earliest end times across all channels */
-  id = mstl->traces;
+  id = mstl->traces.next[0];
   while (id)
   {
-    if (lateststart == HPTERROR || lateststart < id->earliest)
+    if (lateststart == NSTUNSET || lateststart < id->earliest)
       lateststart = id->earliest;
 
-    if (earliestend == HPTERROR || earliestend > id->latest)
+    if (earliestend == NSTUNSET || earliestend > id->latest)
       earliestend = id->latest;
 
-    id = id->next;
+    id = id->next[0];
   }
 
   /* Loop through process list, apply to each time series segment */
   plp = proclist;
   while (plp && !errflag)
   {
-    id = mstl->traces;
+    id = mstl->traces.next[0];
     while (id)
     {
       seg = id->first;
       while (seg)
       {
-        ms_hptime2seedtimestr (seg->starttime, stime, 1);
-        ms_hptime2seedtimestr (seg->endtime, etime, 1);
-        addToProcLog ("Processing %s (%s - %s): %s", id->srcname, stime, etime, procDescription (plp->type));
+        ms_nstime2timestr (seg->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        ms_nstime2timestr (seg->endtime, etime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        addToProcLog ("Processing %s [%s - %s]: %s", id->sid, stime, etime, procDescription (plp->type));
 
         if (plp->type == PROC_STATS)
         {
@@ -346,7 +326,7 @@ main (int argc, char **argv)
         {
           if (procFilter (seg, plp))
           {
-            fprintf (stderr, "Error applying filter for %s\n", id->srcname);
+            fprintf (stderr, "Error applying filter for %s\n", id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -358,7 +338,7 @@ main (int argc, char **argv)
           {
             fprintf (stderr, "Error (de)convolving response (%s - %s) from %s\n",
                      (plp->filename[0]) ? plp->filename[0] : "None",
-                     (plp->filename[1]) ? plp->filename[1] : "None", id->srcname);
+                     (plp->filename[1]) ? plp->filename[1] : "None", id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -369,7 +349,7 @@ main (int argc, char **argv)
           if (procDiff2 (seg, plp))
           {
             fprintf (stderr, "Error differentiating time series for %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -380,7 +360,7 @@ main (int argc, char **argv)
           if (procIntTrap (seg, plp))
           {
             fprintf (stderr, "Error integrating time series for %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -391,7 +371,7 @@ main (int argc, char **argv)
           if (procRMean (seg, plp))
           {
             fprintf (stderr, "Error removing mean from time series %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -402,7 +382,7 @@ main (int argc, char **argv)
           if (procScale (seg, plp))
           {
             fprintf (stderr, "Error scaling values of time series %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -413,7 +393,7 @@ main (int argc, char **argv)
           if (procDecimate (seg, plp))
           {
             fprintf (stderr, "Error decimating time series %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -424,7 +404,7 @@ main (int argc, char **argv)
           if (procTaper (seg, plp))
           {
             fprintf (stderr, "Error tapering time series %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -435,7 +415,7 @@ main (int argc, char **argv)
           if (procPolynomialM (seg, plp))
           {
             fprintf (stderr, "Error applying Maclaurin polynomial to time series %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -446,7 +426,7 @@ main (int argc, char **argv)
           if (procEnvelope (seg, plp))
           {
             fprintf (stderr, "Error calculating envelope of time series %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -457,7 +437,7 @@ main (int argc, char **argv)
           if (procDataTrim (seg, lateststart, earliestend))
           {
             fprintf (stderr, "Error synchronizing time series windows %s\n",
-                     id->srcname);
+                     id->sid);
             errflag = -1;
             ((struct segdetails *)seg->prvtptr)->procerror = errflag;
             break;
@@ -466,10 +446,10 @@ main (int argc, char **argv)
         else if (plp->type == PROC_ROTATE)
         {
           if (!((struct segdetails *)(seg->prvtptr))->rotated)
-            if (procRotate (id, seg, plp) < 0)
+            if (procRotate (mstl, id, seg, plp) < 0)
             {
               fprintf (stderr, "Error rotating time series %s\n",
-                       id->srcname);
+                       id->sid);
               errflag = -1;
               ((struct segdetails *)seg->prvtptr)->procerror = errflag;
               break;
@@ -479,14 +459,14 @@ main (int argc, char **argv)
         seg = seg->next;
       }
 
-      id = id->next;
+      id = id->next[0];
     }
 
     plp = plp->next;
   }
 
   /* Write each segment with no processing errors */
-  id = mstl->traces;
+  id = mstl->traces.next[0];
   while (id)
   {
     seg = id->first;
@@ -494,9 +474,9 @@ main (int argc, char **argv)
     {
       if (!((struct segdetails *)seg->prvtptr)->procerror)
       {
-        ms_hptime2seedtimestr (seg->starttime, stime, 1);
-        ms_hptime2seedtimestr (seg->endtime, etime, 1);
-        addToProcLog ("Writing %s (%s - %s)", id->srcname, stime, etime);
+        ms_nstime2timestr (seg->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        ms_nstime2timestr (seg->endtime, etime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        addToProcLog ("Writing %s [%s - %s]", id->sid, stime, etime);
 
         if (dataformat == 1)
         {
@@ -511,7 +491,7 @@ main (int argc, char **argv)
       }
       seg = seg->next;
     }
-    id = id->next;
+    id = id->next[0];
   }
 
   /* Write process log to output file */
@@ -538,7 +518,7 @@ main (int argc, char **argv)
   }
 
   /* Make sure everything is cleaned up */
-  mstl_free (&mstl, 1);
+  mstl3_free (&mstl, 1);
 
   flp = filelist;
   while (flp)
@@ -568,13 +548,13 @@ main (int argc, char **argv)
 /***************************************************************************
  * procFilter:
  *
- * Apply filter to the MSTraceSeg, results are requested to be
+ * Apply filter to the MS3TraceSeg, results are requested to be
  * returned as doubles.
  *
  * Returns 0 on success and -1 on error.
  ***************************************************************************/
 static int
-procFilter (MSTraceSeg *seg, struct proclink *plp)
+procFilter (MS3TraceSeg *seg, struct proclink *plp)
 {
   void *datasamples = 0;
 
@@ -628,7 +608,7 @@ procFilter (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
+procConvolve (MS3TraceID *id, MS3TraceSeg *seg, struct proclink *plp)
 {
   int idx;
   int retval = 0;
@@ -644,8 +624,16 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
   double *xreal = NULL;
   double *ximag = NULL;
 
+  char net[11] = {0};
+  char sta[11] = {0};
+  char loc[11] = {0};
+  char chan[11] = {0};
+
   if (!seg || !plp)
     return -1;
+
+  /* Decompose Source ID into separate codes */
+  ms_sid2nslc (id->sid, net, sta, loc, chan);
 
   /* Convert samples to doubles if needed */
   if (seg->sampletype != 'd')
@@ -676,9 +664,9 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
       if (respusename)
       {
         retval = calcfr_resp (nfreqs, delfreq,
-                              id->network, id->station, id->location, id->channel,
+                              net, sta, loc, chan,
                               plp->respstart, plp->respstop,
-                              respunits, MS_HPTIME2EPOCH (seg->starttime), respusedelay,
+                              respunits, MS_NSTIME2EPOCH (seg->starttime), respusedelay,
                               plp->filename[idx], resptotalsens,
                               &freqs, &xreal, &ximag, verbose);
       }
@@ -686,7 +674,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
       {
         retval = calcfr_resp (nfreqs, delfreq, "*", "*", "*", "*",
                               plp->respstart, plp->respstop,
-                              respunits, MS_HPTIME2EPOCH (seg->starttime), respusedelay,
+                              respunits, MS_NSTIME2EPOCH (seg->starttime), respusedelay,
                               plp->filename[idx], resptotalsens,
                               &freqs, &xreal, &ximag, verbose);
       }
@@ -799,7 +787,7 @@ procConvolve (MSTraceID *id, MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procDiff2 (MSTraceSeg *seg, struct proclink *plp)
+procDiff2 (MS3TraceSeg *seg, struct proclink *plp)
 {
   int count;
 
@@ -833,7 +821,7 @@ procDiff2 (MSTraceSeg *seg, struct proclink *plp)
   seg->numsamples = count;
 
   /* Shift the start time by 1/2 the sample interval */
-  seg->starttime += (0.5 / seg->samprate) * HPTMODULUS;
+  seg->starttime += (0.5 / seg->samprate) * NSTMODULUS;
 
   return 0;
 } /* End of procDiff2() */
@@ -847,7 +835,7 @@ procDiff2 (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procIntTrap (MSTraceSeg *seg, struct proclink *plp)
+procIntTrap (MS3TraceSeg *seg, struct proclink *plp)
 {
   int count;
 
@@ -881,7 +869,7 @@ procIntTrap (MSTraceSeg *seg, struct proclink *plp)
   seg->numsamples = count;
 
   /* Shift the start time by 1/2 the sample interval */
-  seg->starttime += (0.5 / seg->samprate) * HPTMODULUS;
+  seg->starttime += (0.5 / seg->samprate) * NSTMODULUS;
 
   return 0;
 } /* End of procIntTrap() */
@@ -895,7 +883,7 @@ procIntTrap (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procRMean (MSTraceSeg *seg, struct proclink *plp)
+procRMean (MS3TraceSeg *seg, struct proclink *plp)
 {
   int idx;
   double Mean, pM;
@@ -971,7 +959,7 @@ procRMean (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procScale (MSTraceSeg *seg, struct proclink *plp)
+procScale (MS3TraceSeg *seg, struct proclink *plp)
 {
   int idx;
   float *fdata;
@@ -1030,7 +1018,7 @@ procScale (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procDecimate (MSTraceSeg *seg, struct proclink *plp)
+procDecimate (MS3TraceSeg *seg, struct proclink *plp)
 {
   int numsamples;
 
@@ -1057,7 +1045,7 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
     seg->samplecnt  = numsamples;
     seg->numsamples = numsamples;
     seg->endtime    = seg->starttime +
-                   (((double)(seg->numsamples - 1) / seg->samprate * HPTMODULUS) + 0.5);
+                   (((double)(seg->numsamples - 1) / seg->samprate * NSTMODULUS) + 0.5);
 
     if (!(seg->datasamples = realloc (seg->datasamples, numsamples * sizeof (double))))
     {
@@ -1083,7 +1071,7 @@ procDecimate (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procTaper (MSTraceSeg *seg, struct proclink *plp)
+procTaper (MS3TraceSeg *seg, struct proclink *plp)
 {
   int retval;
   char *typestr = "";
@@ -1135,7 +1123,7 @@ procTaper (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
+procPolynomialM (MS3TraceSeg *seg, struct proclink *plp)
 {
   int idx;
   int retval;
@@ -1198,7 +1186,7 @@ procPolynomialM (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procEnvelope (MSTraceSeg *seg, struct proclink *plp)
+procEnvelope (MS3TraceSeg *seg, struct proclink *plp)
 {
   int retval;
 
@@ -1236,7 +1224,7 @@ procEnvelope (MSTraceSeg *seg, struct proclink *plp)
  * Returns 0 on success and non-zero on error.
  ***************************************************************************/
 static int
-procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
+procDataTrim (MS3TraceSeg *seg, nstime_t lateststart, nstime_t earliestend)
 {
   int64_t trimcount;
   int samplesize;
@@ -1245,7 +1233,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
   if (!seg)
     return -1;
 
-  if (lateststart == HPTERROR || earliestend == HPTERROR)
+  if (lateststart == NSTUNSET || earliestend == NSTUNSET)
     return -1;
 
   /* Skip segments that do not have integer, float or double types */
@@ -1257,7 +1245,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
   /* Trim samples from beginning of segment if earlier than latest */
   if (seg->starttime < lateststart)
   {
-    trimcount = (int64_t) ((double)MS_HPTIME2EPOCH ((lateststart - seg->starttime)) * seg->samprate + 0.5);
+    trimcount = (int64_t) ((double)MS_NSTIME2EPOCH ((lateststart - seg->starttime)) * seg->samprate + 0.5);
 
     if (trimcount > 0 && trimcount < seg->numsamples)
     {
@@ -1273,7 +1261,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
       }
 
       seg->datasamples = datasamples;
-      seg->starttime   = seg->starttime + MS_EPOCH2HPTIME ((trimcount / seg->samprate));
+      seg->starttime   = seg->starttime + MS_EPOCH2NSTIME ((trimcount / seg->samprate));
       seg->numsamples -= trimcount;
       seg->samplecnt -= trimcount;
     }
@@ -1282,7 +1270,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
   /* Trim samples from end of segment if later than earliest */
   if (seg->endtime > earliestend)
   {
-    trimcount = (int64_t) ((double)MS_HPTIME2EPOCH ((seg->endtime - earliestend)) * seg->samprate + 0.5);
+    trimcount = (int64_t) ((double)MS_NSTIME2EPOCH ((seg->endtime - earliestend)) * seg->samprate + 0.5);
 
     if (trimcount > 0 && trimcount < seg->numsamples)
     {
@@ -1297,7 +1285,7 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
       }
 
       seg->datasamples = datasamples;
-      seg->endtime     = seg->endtime - MS_EPOCH2HPTIME ((trimcount / seg->samprate));
+      seg->endtime     = seg->endtime - MS_EPOCH2NSTIME ((trimcount / seg->samprate));
       seg->numsamples -= trimcount;
       seg->samplecnt -= trimcount;
     }
@@ -1314,17 +1302,17 @@ procDataTrim (MSTraceSeg *seg, hptime_t lateststart, hptime_t earliestend)
  * Returns the number of segments rotated, 0 on no operation and negative on error.
  ***************************************************************************/
 static int
-procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
+procRotate (MS3TraceList *mstl, MS3TraceID *tid, MS3TraceSeg *tseg, struct proclink *plp)
 {
-  MSTraceID *id       = NULL;
-  MSTraceID *ENZid[3] = {NULL, NULL, NULL};
+  MS3TraceID *id       = NULL;
+  MS3TraceID *ENZid[3] = {NULL, NULL, NULL};
 
-  MSTraceSeg *seg       = NULL;
-  MSTraceSeg *ENZseg[3] = {NULL, NULL, NULL};
+  MS3TraceSeg *seg       = NULL;
+  MS3TraceSeg *ENZseg[3] = {NULL, NULL, NULL};
 
   struct SACHeader *ENZsacheader[3] = {NULL, NULL, NULL};
 
-  hptime_t hptimetol;
+  nstime_t nstimetol;
   char stime[50];
   char etime[50];
   char tsname[50];
@@ -1340,35 +1328,19 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
   if (!tseg->samprate || !tseg->numsamples)
     return 0;
 
-  /* Target ID source name: Net_Sta_Loc_Chan */
-  snlength = snprintf (tsname, sizeof (tsname), "%s_%s_%s_%s",
-                       tid->network, tid->station, tid->location, tid->channel);
+  /* Identify trace ID's that match the requested set of components to rotate */
+  snlength = snprintf (tsname, sizeof (tsname), "%s", tid->sid);
 
-  if (snlength <= 0)
-    return -1;
-
-  /* Identify MSTraceID's that match the requested set of components to rotate */
-  id = tid;
-  do
+  for (idx = 0; idx < 3; idx++)
   {
-    /* Test for base source name match, ignore last channel character */
-    if (strncmp (id->srcname, tsname, snlength - 1))
-    {
-      id = id->next;
+    if (plp->rotateENZ[idx] == '\0')
       continue;
-    }
 
-    cptr = &(id->srcname[snlength - 1]);
+    tsname[snlength - 1] = plp->rotateENZ[idx];
 
-    if (*cptr == plp->rotateENZ[0])
-      ENZid[0] = id;
-    else if (*cptr == plp->rotateENZ[1])
-      ENZid[1] = id;
-    else if (*cptr == plp->rotateENZ[2])
-      ENZid[2] = id;
-
-    id = id->next;
-  } while (id);
+    if ((id = mstl3_findID (mstl, tsname, 0, NULL)))
+      ENZid[idx] = id;
+  }
 
   /* Check that an appropriate channel set was found for requested 3-D or 2-D rotation */
   if (plp->rotations[1] && (!ENZid[0] || !ENZid[1] || !ENZid[2]))
@@ -1387,7 +1359,7 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
   }
 
   /* Determine time toleranace, as 1/2 sample period, in high precision time ticks */
-  hptimetol = (tseg->samprate) ? (hptime_t) (HPTMODULUS / (2 * tseg->samprate)) : 0;
+  nstimetol = (tseg->samprate) ? (nstime_t) (NSTMODULUS / (2 * tseg->samprate)) : 0;
 
   /* Search for segments in each component group that match the target segment
    * in both time, sample count and sample rate */
@@ -1401,8 +1373,8 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
     {
       for (seg = ENZid[idx]->first; seg; seg = seg->next)
       {
-        if ((seg->starttime <= (tseg->starttime + hptimetol) && seg->starttime >= (tseg->starttime - hptimetol)) &&
-            (seg->endtime <= (tseg->endtime + hptimetol) && seg->endtime >= (tseg->endtime - hptimetol)))
+        if ((seg->starttime <= (tseg->starttime + nstimetol) && seg->starttime >= (tseg->starttime - nstimetol)) &&
+            (seg->endtime <= (tseg->endtime + nstimetol) && seg->endtime >= (tseg->endtime - nstimetol)))
         {
           if (MS_ISRATETOLERABLE (seg->samprate, tseg->samprate))
             if (seg->numsamples == tseg->numsamples)
@@ -1417,10 +1389,10 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
   {
     if (verbose)
     {
-      ms_hptime2seedtimestr (tseg->starttime, stime, 1);
-      ms_hptime2seedtimestr (tseg->endtime, etime, 1);
-      fprintf (stderr, "Cannot find 3-D rotation segment set matching %s (%s - %s)\n",
-               tid->srcname, stime, etime);
+      ms_nstime2timestr (tseg->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+      ms_nstime2timestr (tseg->endtime, etime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+      fprintf (stderr, "Cannot find 3-D rotation segment set matching %s [%s - %s]\n",
+               tid->sid, stime, etime);
     }
     return 0;
   }
@@ -1428,10 +1400,10 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
   {
     if (verbose)
     {
-      ms_hptime2seedtimestr (tseg->starttime, stime, 1);
-      ms_hptime2seedtimestr (tseg->endtime, etime, 1);
-      fprintf (stderr, "Cannot find 2-D rotation segment set matching %s (%s - %s)\n",
-               tid->srcname, stime, etime);
+      ms_nstime2timestr (tseg->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+      ms_nstime2timestr (tseg->endtime, etime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+      fprintf (stderr, "Cannot find 2-D rotation segment set matching %s [%s - %s]\n",
+               tid->sid, stime, etime);
     }
     return 0;
   }
@@ -1479,7 +1451,7 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 
     if (plp->rotatedENZ[idx])
     {
-      if ((cptr = strrchr (ENZid[idx]->channel, plp->rotateENZ[idx])))
+      if ((cptr = strrchr (ENZid[idx]->sid, plp->rotateENZ[idx])))
         *cptr = plp->rotatedENZ[idx];
     }
 
@@ -1571,18 +1543,19 @@ procRotate (MSTraceID *tid, MSTraceSeg *tseg, struct proclink *plp)
 /***************************************************************************
  * readMSEED:
  *
- * Read file containing miniSEED and add data to the supplied MSTraceList.
+ * Read file containing miniSEED and add data to the supplied MS3TraceList.
  *
  * Returns the number of samples read on success and -1 on error.
  ***************************************************************************/
 static int64_t
-readMSEED (char *mseedfile, MSTraceList *mstl)
+readMSEED (char *mseedfile, MS3TraceList *mstl)
 {
-  MSRecord *msr   = 0;
-  MSTraceSeg *seg = 0;
-  char srcname[100];
+  MS3Record *msr     = NULL;
+  MS3TraceSeg *seg   = NULL;
+  uint32_t flags     = 0;
   int64_t totalsamps = 0;
   int retcode        = MS_NOERROR;
+  char stime[100];
 
   if (!mseedfile)
   {
@@ -1592,47 +1565,46 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
 
   if (!mstl)
   {
-    fprintf (stderr, "readMSEED(): No MSTraceList specified\n");
+    fprintf (stderr, "readMSEED(): No MS3TraceList specified\n");
     return -1;
   }
 
+  /* Set flags to validate CRCs, parse byte ranges from file names and unpack data */
+  flags |= MSF_VALIDATECRC;
+  flags |= MSF_PNAMERANGE;
+  flags |= MSF_UNPACKDATA;
+
   /* Loop over the input file reading records */
-  while ((retcode = ms_readmsr (&msr, mseedfile, reclen, NULL, NULL, 1, 1, verbose - 3)) == MS_NOERROR)
+  while ((retcode = ms3_readmsr (&msr, mseedfile, flags, verbose - 3)) == MS_NOERROR)
   {
     /* Skip data records that do not contain time series data */
     if (msr->numsamples == 0 || (msr->sampletype != 'i' && msr->sampletype != 'f' && msr->sampletype != 'd'))
     {
       if (verbose >= 3)
       {
-        char stime[100];
-        msr_srcname (msr, srcname, 1);
-        ms_hptime2seedtimestr (msr->starttime, stime, 1);
-        fprintf (stderr, "Skipping (no time series data) %s, %s\n", srcname, stime);
+        ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        fprintf (stderr, "Skipping (no time series data) %s, %s\n", msr->sid, stime);
       }
       continue;
     }
 
     /* Check if record matches start/end time criteria */
-    if (starttime != HPTERROR && (msr->starttime < starttime))
+    if (starttime != NSTUNSET && (msr->starttime < starttime))
     {
       if (verbose >= 3)
       {
-        char stime[100];
-        msr_srcname (msr, srcname, 1);
-        ms_hptime2seedtimestr (msr->starttime, stime, 1);
-        fprintf (stderr, "Skipping (start time) %s, %s\n", srcname, stime);
+        ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        fprintf (stderr, "Skipping (start time) %s, %s\n", msr->sid, stime);
       }
       continue;
     }
 
-    if (endtime != HPTERROR && (msr_endtime (msr) > endtime))
+    if (endtime != NSTUNSET && (msr3_endtime (msr) > endtime))
     {
       if (verbose >= 3)
       {
-        char stime[100];
-        msr_srcname (msr, srcname, 1);
-        ms_hptime2seedtimestr (msr->starttime, stime, 1);
-        fprintf (stderr, "Skipping (end time) %s, %s\n", srcname, stime);
+        ms_nstime2timestr (msr->starttime, stime, ISOMONTHDAY_DOY_Z, NANO_MICRO);
+        fprintf (stderr, "Skipping (end time) %s, %s\n", msr->sid, stime);
       }
       continue;
     }
@@ -1640,12 +1612,12 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
     totalsamps += msr->samplecnt;
 
     if (verbose >= 3)
-      msr_print (msr, verbose - 3);
+      msr3_print (msr, verbose - 3);
 
-    /* Add new data to MSTraceList, merge with other segments */
-    if (!(seg = mstl_addmsr (mstl, msr, 0, 1, timetol, sampratetol)))
+    /* Add new data to MS3TraceList, merge with other segments */
+    if (!(seg = mstl3_addmsr (mstl, msr, 0, 1, flags, NULL)))
     {
-      fprintf (stderr, "[%s] Error adding samples to MSTraceList\n", mseedfile);
+      fprintf (stderr, "[%s] Error adding samples to MS3TraceList\n", mseedfile);
     }
 
     /* Add additional segment details structure */
@@ -1670,7 +1642,7 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
   }
 
   /* Make sure everything is cleaned up */
-  ms_readmsr (&msr, NULL, 0, NULL, NULL, 0, 0, 0);
+  ms3_readmsr (&msr, NULL, flags, verbose - 3);
 
   return totalsamps;
 } /* End of readMSEED() */
@@ -1678,25 +1650,31 @@ readMSEED (char *mseedfile, MSTraceList *mstl)
 /***************************************************************************
  * readSAC:
  *
- * Read a SAC file and add data samples to a MSTraceGroup.  As the SAC
- * data is read in a MSRecord struct is used as a holder for the input
+ * Read a SAC file and add data samples to a MS3TraceGroup.  As the SAC
+ * data is read in a MS3Record struct is used as a holder for the input
  * information.
  *
  * The SAC header contents is stored at the private pointer of the
- * MSTraceSeg structure (MSTraceSeg->prvtptr->sacheader).
+ * MS3TraceSeg structure (MS3TraceSeg->prvtptr->sacheader).
  *
  * Returns the number of samples read on success and -1 on failure
  ***************************************************************************/
 static int64_t
-readSAC (char *sacfile, MSTraceList *mstl)
+readSAC (char *sacfile, MS3TraceList *mstl)
 {
   FILE *ifp     = 0;
-  MSRecord *msr = 0;
-  MSTraceSeg *seg;
+  MS3Record *msr = 0;
+  MS3TraceSeg *seg;
+  uint32_t flags = 0;
 
   struct SACHeader sh;
   float *fdata = 0;
   int datacnt;
+
+  char net[11] = {0};
+  char sta[11] = {0};
+  char loc[11] = {0};
+  char chan[11] = {0};
 
   /* Open input file */
   if ((ifp = fopen (sacfile, "rb")) == NULL)
@@ -1713,32 +1691,34 @@ readSAC (char *sacfile, MSTraceList *mstl)
     return -1;
   }
 
-  if (!(msr = msr_init (msr)))
+  if (!(msr = msr3_init (msr)))
   {
-    fprintf (stderr, "Cannot initialize MSRecord strcture\n");
+    fprintf (stderr, "Cannot initialize MS3Record strcture\n");
     return -1;
   }
 
-  /* Populate MSRecord structure with header details */
+  /* Populate MS3Record structure with header details */
   if (strncmp (SUNDEF, sh.knetwk, 8))
-    ms_strncpclean (msr->network, sh.knetwk, 2);
+    ms_strncpclean (net, sh.knetwk, 8);
   if (strncmp (SUNDEF, sh.kstnm, 8))
-    ms_strncpclean (msr->station, sh.kstnm, 5);
+    ms_strncpclean (sta, sh.kstnm, 8);
   if (strncmp (SUNDEF, sh.khole, 8))
-    ms_strncpclean (msr->location, sh.khole, 2);
+    ms_strncpclean (loc, sh.khole, 8);
   if (strncmp (SUNDEF, sh.kcmpnm, 8))
-    ms_strncpclean (msr->channel, sh.kcmpnm, 3);
+    ms_strncpclean (chan, sh.kcmpnm, 8);
 
   if (sacnet)
-    ms_strncpclean (msr->network, sacnet, 2);
+    ms_strncpclean (net, sacnet, sizeof (net));
 
   if (sacloc)
-    ms_strncpclean (msr->location, sacloc, 2);
+    ms_strncpclean (loc, sacloc, sizeof (loc));
 
-  msr->starttime = ms_time2hptime (sh.nzyear, sh.nzjday, sh.nzhour, sh.nzmin, sh.nzsec, sh.nzmsec * 1000);
+  ms_sid2nslc (msr->sid, net, sta, loc, chan);
+
+  msr->starttime = ms_time2nstime (sh.nzyear, sh.nzjday, sh.nzhour, sh.nzmin, sh.nzsec, sh.nzmsec * 1000000);
 
   /* Adjust for Begin ('B' SAC variable) time offset */
-  msr->starttime += (double)sh.b * HPTMODULUS;
+  msr->starttime += (double)sh.b * NSTMODULUS;
 
   /* Calculate sample rate from interval(period) rounding to nearest 0.000001 Hz */
   msr->samprate = (double)((int)((1 / sh.delta) * 100000 + 0.5)) / 100000;
@@ -1750,15 +1730,14 @@ readSAC (char *sacfile, MSTraceList *mstl)
 
   if (verbose >= 1)
   {
-    fprintf (stderr, "[%s] %lld samps @ %.6f Hz for N: '%s', S: '%s', L: '%s', C: '%s'\n",
-             sacfile, (long long int)msr->numsamples, msr->samprate,
-             msr->network, msr->station, msr->location, msr->channel);
+    fprintf (stderr, "[%s] %" PRId64 " samps @ %.6f Hz for %s\n",
+             sacfile, msr->numsamples, msr->samprate, msr->sid);
   }
 
-  /* Add new data to MSTraceList, do not merge with other segments */
-  if (!(seg = mstl_addmsr (mstl, msr, 0, 0, timetol, sampratetol)))
+  /* Add new data to MS3TraceList, do not merge with other segments */
+  if (!(seg = mstl3_addmsr (mstl, msr, 0, 0, flags, NULL)))
   {
-    fprintf (stderr, "[%s] Error adding samples to MSTraceList\n", sacfile);
+    fprintf (stderr, "[%s] Error adding samples to MS3TraceList\n", sacfile);
   }
 
   /* Add additional segment details structure */
@@ -1788,8 +1767,7 @@ readSAC (char *sacfile, MSTraceList *mstl)
   }
   else if (verbose >= 1)
   {
-    fprintf (stderr, "%s_%s_%s_%s: SAC header contents not stored for merged segment",
-             msr->network, msr->station, msr->location, msr->channel);
+    fprintf (stderr, "%s: SAC header contents not stored for merged segment", msr->sid);
   }
 
   fclose (ifp);
@@ -1800,7 +1778,7 @@ readSAC (char *sacfile, MSTraceList *mstl)
   msr->datasamples = 0;
 
   if (msr)
-    msr_free (&msr);
+    msr3_free (&msr);
 
   return datacnt;
 } /* End of readSAC() */
@@ -2236,16 +2214,26 @@ readAlphaDataSAC (FILE *ifp, float *data, int datacnt)
  * Returns the number of samples written, -1 on error.
  ***************************************************************************/
 static int
-writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
+writeMSEED (MS3TraceID *id, MS3TraceSeg *seg, char *outputfile)
 {
-  MSTrace *mst  = NULL;
-  MSRecord *msr = NULL;
-  BTime btime;
-  struct blkt_100_s Blkt100;
+  MS3Record *msr = NULL;
+  uint32_t flags = 0;
   char outfile[1024];
   FILE *ofp             = 0;
   int64_t packedsamples = 0;
   int packedrecords     = 0;
+
+  char net[11] = {0};
+  char sta[11] = {0};
+  char loc[11] = {0};
+  char chan[11] = {0};
+
+  uint16_t year;
+  uint16_t yday;
+  uint8_t hour;
+  uint8_t min;
+  uint8_t sec;
+  uint32_t nsec;
 
   /* Determine file open mode:
    * If bytes have already been written: append
@@ -2298,44 +2286,49 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
     return -1;
   }
 
-  /* Populate MSTrace used for packing, handle channel override */
-  mst = mst_init (NULL);
-  strncpy (mst->network, id->network, sizeof (mst->network) - 1);
-  mst->network[sizeof (mst->network) - 1] = '\0';
-  strncpy (mst->station, id->station, sizeof (mst->station) - 1);
-  mst->station[sizeof (mst->station) - 1] = '\0';
-  strncpy (mst->location, id->location, sizeof (mst->location) - 1);
-  mst->location[sizeof (mst->location) - 1] = '\0';
-  strncpy (mst->channel, (channel) ? channel : id->channel, sizeof (mst->channel) - 1);
-  mst->channel[sizeof (mst->channel) - 1] = '\0';
-  mst->dataquality                        = id->dataquality;
+  /* Populate MS3Record used for packing */
+  if (!(msr = msr3_init (msr)))
+  {
+    ms_log (2, "Could not allocate MS3Record, out of memory?\n");
+    return -1;
+  }
 
-  mst->starttime   = seg->starttime;
-  mst->endtime     = seg->endtime;
-  mst->samprate    = seg->samprate;
-  mst->samplecnt   = seg->samplecnt;
-  mst->datasamples = seg->datasamples;
-  mst->numsamples  = seg->numsamples;
-  mst->sampletype  = seg->sampletype;
+  msr->reclen   = packreclen;
+  msr->encoding = packencoding;
+
+  ms_sid2nslc (id->sid, net, sta, loc, chan);
+
+  if (channel)
+  {
+    strncpy (chan, channel, sizeof (chan) - 1);
+  }
+
+  ms_nslc2sid (msr->sid, sizeof (msr->sid), 0, net, sta, loc, chan);
+
+  msr->pubversion  = id->pubversion;
+  msr->starttime   = seg->starttime;
+  msr->samprate    = seg->samprate;
+  msr->samplecnt   = seg->samplecnt;
+  msr->datasamples = seg->datasamples;
+  msr->numsamples  = seg->numsamples;
+  msr->sampletype  = seg->sampletype;
 
   if (verbose)
-    fprintf (stderr, "Writing miniSEED for %.8s.%.8s.%.8s.%.8s\n",
-             mst->network, mst->station, mst->location, mst->channel);
+    fprintf (stderr, "Writing miniSEED for %s\n", msr->sid);
 
   if (!outputfile)
   {
-    if (ms_hptime2btime (mst->starttime, &btime))
+    if (ms_nstime2time (msr->starttime, &year, &yday, &hour, &min, &sec, &nsec))
     {
-      fprintf (stderr, "Cannot convert MSTrace hptime to BTime\n");
+      fprintf (stderr, "Cannot decompose nstime into date-time components\n");
       return -1;
     }
 
-    /* Create output file name: Net.Sta.Loc.Chan.Qual.Year.Day.Hour.Min.Sec.mseed */
-    snprintf (outfile, sizeof (outfile), "%s%s%s.%s.%s.%s.%.1s.%04d,%03d,%02d:%02d:%02d.mseed",
+    /* Create output file name: Net.Sta.Loc.Chan.Qual.Year,Day,Hour:Min:Sec.mseed */
+    snprintf (outfile, sizeof (outfile), "%s%s%s.%s.%s.%s.%d.%04d,%03d,%02d:%02d:%02d.mseed",
               (outputdir) ? outputdir : "", (outputdir) ? "/" : "",
-              mst->network, mst->station, mst->location, mst->channel,
-              &mst->dataquality, btime.year, btime.day, btime.hour,
-              btime.min, btime.sec);
+              net, sta, loc, chan, msr->pubversion,
+              year, yday, hour, min, sec);
   }
   else
   {
@@ -2354,38 +2347,25 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
     return -1;
   }
 
-  /* If a blockette 100 is requested add it */
-  if (srateblkt)
-  {
-    msr = msr_init (NULL);
-    memset (&Blkt100, 0, sizeof (struct blkt_100_s));
-    Blkt100.samprate = (float)msr->samprate;
-    msr_addblockette (msr, (char *)&Blkt100, sizeof (struct blkt_100_s), 100, 0);
-  }
+  /* Set data flush flag */
+  flags |= MSF_FLUSHDATA;
+
+  /* Set miniSEED v2 if requested */
+  if (msformat == 2)
+    flags |= MSF_PACKVER2;
 
   /* Pack data into records */
-  packedrecords = mst_pack (mst, recordHandler, ofp, packreclen, packencoding,
-                            byteorder, &packedsamples, 1, verbose - 2, msr);
-
-  /* Unless anerror occurred the sample buffer has been released, adjust */
-  if (packedrecords >= 0)
-  {
-    seg->datasamples = NULL;
-    seg->numsamples  = 0;
-  }
+  packedrecords = msr3_pack (msr, recordHandler, ofp, &packedsamples, flags, verbose - 2);
 
   if (verbose)
-    fprintf (stderr, "Packed %lld samples into %d records\n",
-             (long long int)packedsamples, packedrecords);
+    fprintf (stderr, "Packed %" PRId64 " samples into %d records\n",
+             packedsamples, packedrecords);
 
   /* Make sure everything is cleaned up */
+  msr->datasamples = NULL;
+  msr->numsamples  = 0;
   if (msr)
-    msr_free (&msr);
-
-  /* Free temporary MSTrace */
-  mst->datasamples = NULL;
-  mst->prvtptr     = NULL;
-  mst_free (&mst);
+    msr3_free (&msr);
 
   if (ofp && ofp != stdout)
     fclose (ofp);
@@ -2401,15 +2381,26 @@ writeMSEED (MSTraceID *id, MSTraceSeg *seg, char *outputfile)
  * Returns the number of samples written or -1 on error.
  ***************************************************************************/
 static int
-writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
+writeSAC (MS3TraceID *id, MS3TraceSeg *seg, int format, char *outputfile)
 {
   struct SACHeader sh = NullSACHeader;
   char outfile[1024];
-  char sacchannel[11] = "";
 
   float *fdata = 0;
 
-  hptime_t submsec;
+  char net[11] = {0};
+  char sta[11] = {0};
+  char loc[11] = {0};
+  char chan[11] = {0};
+
+  uint16_t year;
+  uint16_t yday;
+  uint8_t hour;
+  uint8_t min;
+  uint8_t sec;
+  uint32_t nsec;
+
+  nstime_t submsec;
   int idx;
 
   if (!id || !seg)
@@ -2418,32 +2409,28 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
   if (seg->numsamples <= 0 || seg->samprate == 0.0)
     return 0;
 
-  /* Substitute channel name if specified */
-  strncpy (sacchannel, (channel) ? channel : id->channel, sizeof (sacchannel) - 1);
-  sacchannel[sizeof (sacchannel) - 1] = '\0';
-
   if (verbose)
-    fprintf (stderr, "Writing SAC for %.8s.%.8s.%.8s.%.8s\n",
-             id->network, id->station, id->location, sacchannel);
+    fprintf (stderr, "Writing SAC for %s\n", id->sid);
 
   /* If an original input SAC header is available use it as a base to update */
   if (seg->prvtptr && ((struct segdetails *)seg->prvtptr)->sacheader)
   {
     struct SACHeader *osh = (struct SACHeader *)((struct segdetails *)seg->prvtptr)->sacheader;
-    hptime_t ostarttime;
+    nstime_t ostarttime;
 
     memcpy (&sh, osh, sizeof (struct SACHeader));
 
     /* Calculate original input start time */
-    ostarttime = ms_time2hptime (osh->nzyear, osh->nzjday, osh->nzhour, osh->nzmin, osh->nzsec, osh->nzmsec * 1000);
+    ostarttime = ms_time2nstime (osh->nzyear, osh->nzjday, osh->nzhour, osh->nzmin,
+                                 osh->nzsec, osh->nzmsec * 1000000);
 
     /* Adjust for Begin ('B' SAC variable) time offset */
-    ostarttime += (double)osh->b * HPTMODULUS;
+    ostarttime += (double)osh->b * NSTMODULUS;
 
     /* If data start time has changed adjust Begin and End header variables */
     if (ostarttime != seg->starttime)
     {
-      float shift = (float)(seg->starttime - ostarttime) / HPTMODULUS;
+      float shift = (float)(seg->starttime - ostarttime) / NSTMODULUS;
 
       if (verbose >= 1)
         fprintf (stderr, "Updating data begin and end time variables (%g seconds)\n", shift);
@@ -2454,37 +2441,41 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
   }
   else /* Otherwise set zero time and time of first and last sample */
   {
-    BTime btime;
-
     /* Set time zero to start time */
-    ms_hptime2btime (seg->starttime, &btime);
-    sh.nzyear = btime.year;
-    sh.nzjday = btime.day;
-    sh.nzhour = btime.hour;
-    sh.nzmin  = btime.min;
-    sh.nzsec  = btime.sec;
-    sh.nzmsec = btime.fract / 10;
+    ms_nstime2time (seg->starttime, &year, &yday, &hour, &min, &sec, &nsec);
+    sh.nzyear = year;
+    sh.nzjday = yday;
+    sh.nzhour = hour;
+    sh.nzmin  = min;
+    sh.nzsec  = sec;
+    sh.nzmsec = nsec / 1000000;
 
     /* Determine any sub-millisecond portion of the start time in HP time */
     submsec = (seg->starttime -
-               ms_time2hptime (sh.nzyear, sh.nzjday, sh.nzhour,
-                               sh.nzmin, sh.nzsec, sh.nzmsec * 1000));
+               ms_time2nstime (sh.nzyear, sh.nzjday, sh.nzhour,
+                               sh.nzmin, sh.nzsec, sh.nzmsec * 1000000));
 
     /* Set begin and end offsets from reference time for first and last sample,
        * any sub-millisecond start time is stored in these offsets. */
-    sh.b = ((float)submsec / HPTMODULUS);
+    sh.b = ((float)submsec / NSTMODULUS);
     sh.e = sh.b + (seg->numsamples - 1) * (1 / seg->samprate);
   }
 
-  /* Set time series source parameters, handle channel override */
-  if (*id->network != '\0')
-    strncpy (sh.knetwk, id->network, 8);
-  if (*id->station != '\0')
-    strncpy (sh.kstnm, id->station, 8);
-  if (*id->location != '\0')
-    strncpy (sh.khole, id->location, 8);
-  if (sacchannel[0] != '\0')
-    strncpy (sh.kcmpnm, sacchannel, 8);
+  /* Set time series source parameters */
+  ms_sid2nslc (id->sid, net, sta, loc, chan);
+
+  /* Channel override */
+  if (channel)
+    strncpy (chan, channel, sizeof (chan));
+
+  if (*net != '\0')
+    strncpy (sh.knetwk, net, sizeof (sh.knetwk));
+  if (*sta != '\0')
+    strncpy (sh.kstnm, sta, sizeof (sh.kstnm));
+  if (*loc != '\0')
+    strncpy (sh.khole, loc, sizeof (sh.khole));
+  if (*chan != '\0')
+    strncpy (sh.kcmpnm, chan, sizeof (sh.kcmpnm));
 
   /* Set misc. header variables */
   sh.nvhdr  = 6;     /* Header version = 6 */
@@ -2535,10 +2526,10 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
     if (!outputfile)
     {
       /* Create output file name: Net.Sta.Loc.Chan.Qual.Year.Day.Hour.Min.Sec.SAC */
-      snprintf (outfile, sizeof (outfile), "%s%s%s.%s.%s.%s.%.1s.%04d,%03d,%02d:%02d:%02d.SAC",
+      snprintf (outfile, sizeof (outfile), "%s%s%s.%s.%s.%s.%d.%04d,%03d,%02d:%02d:%02d.SAC",
                 (outputdir) ? outputdir : "", (outputdir) ? "/" : "",
-                id->network, id->station, id->location, sacchannel,
-                &id->dataquality, sh.nzyear, sh.nzjday, sh.nzhour,
+                net, sta, loc, chan,
+                id->pubversion, sh.nzyear, sh.nzjday, sh.nzhour,
                 sh.nzmin, sh.nzsec);
     }
     else
@@ -2578,10 +2569,10 @@ writeSAC (MSTraceID *id, MSTraceSeg *seg, int format, char *outputfile)
     if (!outputfile)
     {
       /* Create output file name: Net.Sta.Loc.Chan.Qual.Year.Day.Hour.Min.Sec.SACA */
-      snprintf (outfile, sizeof (outfile), "%s%s%s.%s.%s.%s.%.1s.%04d,%03d,%02d:%02d:%02d.SACA",
+      snprintf (outfile, sizeof (outfile), "%s%s%s.%s.%s.%s.%d.%04d,%03d,%02d:%02d:%02d.SACA",
                 (outputdir) ? outputdir : "", (outputdir) ? "/" : "",
-                id->network, id->station, id->location, sacchannel,
-                &id->dataquality, sh.nzyear, sh.nzjday, sh.nzhour,
+                net, sta, loc, chan,
+                id->pubversion, sh.nzyear, sh.nzjday, sh.nzhour,
                 sh.nzmin, sh.nzsec);
     }
     else
@@ -2760,11 +2751,11 @@ writeAlphaSAC (struct SACHeader *sh, float *fdata, int npts, char *outfile)
  * Returns 0 on sucess, 1 when no matching metadata found and -1 on failure.
  ***************************************************************************/
 static int
-insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime)
+insertSACMetaData (struct SACHeader *sh, nstime_t sacstarttime)
 {
   struct metalist *mlp = metadata;
   struct metanode *mn  = NULL;
-  hptime_t sacendtime;
+  nstime_t sacendtime;
   char *endptr;
   char sacnetwork[9];
   char sacstation[9];
@@ -2799,7 +2790,7 @@ insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime)
     sacchannel[0] = '\0';
 
   /* Calculate end time of SAC data */
-  sacendtime = sacstarttime + (((sh->npts - 1) * sh->delta) * HPTMODULUS);
+  sacendtime = sacstarttime + (((sh->npts - 1) * sh->delta) * NSTMODULUS);
 
   while (mlp)
   {
@@ -2818,10 +2809,10 @@ insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime)
              (!strncmp (sacchannel, mn->metafields[3], 8) || (*(mn->metafields[3]) == '*')))
     {
       /* Check time window match */
-      if (mn->starttime != HPTERROR || mn->endtime != HPTERROR)
+      if (mn->starttime != NSTUNSET || mn->endtime != NSTUNSET)
       {
         /* Check for overlap with metadata window */
-        if (mn->starttime != HPTERROR && mn->endtime != HPTERROR)
+        if (mn->starttime != NSTUNSET && mn->endtime != NSTUNSET)
         {
           if (!(sacendtime >= mn->starttime && sacstarttime <= mn->endtime))
           {
@@ -2830,7 +2821,7 @@ insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime)
           }
         }
         /* Check if data after start time */
-        else if (mn->starttime != HPTERROR)
+        else if (mn->starttime != NSTUNSET)
         {
           if (sacendtime < mn->starttime)
           {
@@ -2839,7 +2830,7 @@ insertSACMetaData (struct SACHeader *sh, hptime_t sacstarttime)
           }
         }
         /* Check if data before end time */
-        else if (mn->endtime != HPTERROR)
+        else if (mn->endtime != NSTUNSET)
         {
           if (sacstarttime > mn->endtime)
           {
@@ -3367,12 +3358,12 @@ applyPolynomialM (void *input, char inputtype, int length,
 /***************************************************************************
  * convertSamples:
  *
- * Convert samples for a specified MSTraceSeg to specified type.
+ * Convert samples for a specified MS3TraceSeg to specified type.
  *
  * Returns 0 on success, and -1 on failure
  ***************************************************************************/
 static int
-convertSamples (MSTraceSeg *seg, char type)
+convertSamples (MS3TraceSeg *seg, char type)
 {
   int32_t *idata;
   float *fdata;
@@ -3381,7 +3372,7 @@ convertSamples (MSTraceSeg *seg, char type)
 
   if (!seg)
   {
-    fprintf (stderr, "convertSamples: Error, no MSTraceSeg specified!\n");
+    fprintf (stderr, "convertSamples: Error, no MS3TraceSeg specified!\n");
     return -1;
   }
 
@@ -3549,24 +3540,16 @@ parameterProc (int argcount, char **argvec)
     {
       basicsum = -1;
     }
-    else if (strcmp (argvec[optind], "-tt") == 0)
-    {
-      timetol = strtod (getOptVal (argcount, argvec, optind++, 0), NULL);
-    }
-    else if (strcmp (argvec[optind], "-rt") == 0)
-    {
-      sampratetol = strtod (getOptVal (argcount, argvec, optind++, 0), NULL);
-    }
     else if (strcmp (argvec[optind], "-ts") == 0)
     {
-      starttime = ms_seedtimestr2hptime (getOptVal (argcount, argvec, optind++, 0));
-      if (starttime == HPTERROR)
+      starttime = ms_timestr2nstime (getOptVal (argcount, argvec, optind++, 0));
+      if (starttime == NSTERROR)
         return -1;
     }
     else if (strcmp (argvec[optind], "-te") == 0)
     {
-      endtime = ms_seedtimestr2hptime (getOptVal (argcount, argvec, optind++, 0));
-      if (endtime == HPTERROR)
+      endtime = ms_timestr2nstime (getOptVal (argcount, argvec, optind++, 0));
+      if (endtime == NSTERROR)
         return -1;
     }
     else if (strcmp (argvec[optind], "-Im") == 0)
@@ -3581,27 +3564,17 @@ parameterProc (int argcount, char **argvec)
     {
       dataformat = 1;
     }
-    else if (strcmp (argvec[optind], "-Mr") == 0)
-    {
-      reclen = strtol (getOptVal (argcount, argvec, optind++, 1), NULL, 10);
-    }
-    else if (strcmp (argvec[optind], "-Me") == 0)
-    {
-      encodingstr = getOptVal (argcount, argvec, optind++, 0);
-    }
     else if (strcmp (argvec[optind], "-MR") == 0)
     {
       packreclen = strtol (getOptVal (argcount, argvec, optind++, 0), NULL, 10);
     }
-    /*
-      else if (strcmp (argvec[optind], "-S") == 0)
-        {
-          srateblkt = 1;
-        }
-      */
     else if (strcmp (argvec[optind], "-ME") == 0)
     {
       packencoding = strtol (getOptVal (argcount, argvec, optind++, 0), NULL, 10);
+    }
+    else if (strcmp (argvec[optind], "-MF") == 0)
+    {
+      msformat = strtol (getOptVal (argcount, argvec, optind++, 0), NULL, 10);
     }
     else if (strcmp (argvec[optind], "-Sif") == 0)
     {
@@ -4153,6 +4126,7 @@ readMetaData (char *metafile)
   char line[1024];
   char *lineptr;
   char *fp;
+  char yearstr[5] = {0};
   int idx, count;
   int linecount = 0;
 
@@ -4206,8 +4180,8 @@ readMetaData (char *metafile)
     lineptr = strdup (line);
 
     mn.metafields[0] = fp = lineptr;
-    mn.starttime          = HPTERROR;
-    mn.endtime            = HPTERROR;
+    mn.starttime          = NSTUNSET;
+    mn.endtime            = NSTUNSET;
 
     /* Separate line on commas and index in metafields array */
     for (idx = 1; idx < MAXMETAFIELDS; idx++)
@@ -4227,7 +4201,7 @@ readMetaData (char *metafile)
     }
 
     /* Trim last field if more fields exist */
-    if ((fp = strchr (fp, ',')))
+    if (fp && (fp = strchr (fp, ',')))
       *fp = '\0';
 
     /* Sanity check, source name fields must be populated */
@@ -4246,7 +4220,22 @@ readMetaData (char *metafile)
     /* Parse and convert start time */
     if (mn.metafields[15])
     {
-      if ((mn.starttime = ms_timestr2hptime (mn.metafields[15])) == HPTERROR)
+      /* Check if first four characters are a year before 1900 and set NSTUNSET (open) time */
+      strncpy (yearstr, mn.metafields[15], 4);
+      if (strlen (yearstr) >= 4 &&
+          isdigit (yearstr[0]) &&
+          isdigit (yearstr[1]) &&
+          isdigit (yearstr[2]) &&
+          isdigit (yearstr[3]) &&
+          strtoul (yearstr, NULL, 10) < 1900)
+      {
+        if (verbose > 1)
+          fprintf (stderr, "Setting open start time for year: %s\n", yearstr);
+
+        mn.starttime = NSTUNSET;
+      }
+
+      else if ((mn.starttime = ms_timestr2nstime (mn.metafields[15])) == NSTERROR)
       {
         fprintf (stderr, "Error parsing metadata start time: '%s'\n", mn.metafields[15]);
         exit (1);
@@ -4256,7 +4245,22 @@ readMetaData (char *metafile)
     /* Parse and convert end time */
     if (mn.metafields[16])
     {
-      if ((mn.endtime = ms_timestr2hptime (mn.metafields[16])) == HPTERROR)
+      /* Check if first four characters are a year beyond 2100 and set NSTUNSET (open) time */
+      strncpy (yearstr, mn.metafields[16], 4);
+      if (strlen (yearstr) >= 4 &&
+          isdigit (yearstr[0]) &&
+          isdigit (yearstr[1]) &&
+          isdigit (yearstr[2]) &&
+          isdigit (yearstr[3]) &&
+          strtoul (yearstr, NULL, 10) > 2100)
+      {
+        if (verbose > 1)
+          fprintf (stderr, "Setting open end time for year: %s\n", yearstr);
+
+        mn.endtime = NSTUNSET;
+      }
+
+      else if ((mn.endtime = ms_timestr2nstime (mn.metafields[16])) == NSTERROR)
       {
         fprintf (stderr, "Error parsing metadata end time: '%s'\n", mn.metafields[16]);
         exit (1);
@@ -4341,7 +4345,8 @@ addFile (char *filename)
 {
   FILE *ifp = 0;
   struct filelink *newlp;
-  char header[48];
+  char header[64] = {0};
+  uint8_t formatversion;
 
   if (!filename)
   {
@@ -4365,7 +4370,7 @@ addFile (char *filename)
     return -1;
   }
 
-  /* Determine file format: open and read first 48 bytes */
+  /* Determine file format: open and read first some data to test */
   if ((ifp = fopen (filename, "rb")) == NULL)
   {
     fprintf (stderr, "Cannot open input file: %s (%s)\n", filename, strerror (errno));
@@ -4374,7 +4379,7 @@ addFile (char *filename)
     return -1;
   }
 
-  if (fread (header, 48, 1, ifp) != 1)
+  if (fread (header, sizeof (header), 1, ifp) != 1)
   {
     fprintf (stderr, "Cannot read %s\n", filename);
     free (newlp->filename);
@@ -4387,7 +4392,7 @@ addFile (char *filename)
   /* Set input format or check for miniSEED, otherwise default to SAC */
   if (informat)
     newlp->format = informat;
-  else if (MS_ISVALIDHEADER (header))
+  else if (ms3_detect (header, sizeof (header), &formatversion) > 0)
     newlp->format = 1;
   else
     newlp->format = 2;
@@ -4857,8 +4862,6 @@ usage (void)
            " -h            Show this usage message\n"
            " -v            Be more verbose, multiple flags can be used\n"
            " -s            Print a basic summary after reading all input files\n"
-           " -tt secs      Specify a time tolerance for continuous traces\n"
-           " -rt diff      Specify a sample rate tolerance for continuous traces\n"
            " -ts time      Limit miniSEED input to records that start after time\n"
            " -te time      Limit miniSEED input to records that end before time\n"
            "                 time format: 'YYYY[,DDD,HH,MM,SS,FFFFFF]' delimiters: [,:.]\n"
